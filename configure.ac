@@ -12,6 +12,7 @@ AC_CONFIG_FILES([3rdparty/libconfig/Makefile 3rdparty/yaml-cpp/Makefile 3rdparty
 AC_CONFIG_FILES([src/char/Makefile src/login/Makefile])
 AC_CONFIG_FILES([src/map/Makefile src/tool/Makefile])
 AC_CONFIG_FILES([src/web/Makefile])
+AC_CONFIG_FILES([src/ai/Makefile])
 
 AC_GNU_SOURCE
 
@@ -365,6 +366,17 @@ AC_ARG_WITH(
 	[output_web="web-server"]
 )
 AC_SUBST([OWEB],$output_web)
+
+AC_ARG_WITH(
+	[outputai],
+	AC_HELP_STRING(
+		[--with-outputai@<:@=ARG@:>@],
+		[Specify the ai-serv output name (defaults to ai-server)]
+	),
+	[output_ai="$withval"],
+	[output_ai="ai-server"]
+)
+AC_SUBST([OAI],$output_ai)
 
 
 #
