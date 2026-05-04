@@ -422,17 +422,24 @@ static TIMER_FUNC(aichrif_wander_timer){
 	return 0;
 }
 
-/// Phase 2.3+2.5/2.6: combat tick.
-///   - Skips dead shells (hp=0).
-///   - Tries skill_picker_choose first; if a skill matches, send AI_CMD_CAST.
-///   - Otherwise send AI_CMD_ATTACK on the closest enemy.
+/// Phase 2.3+2.5/2.6+3.2: combat tick.
+///   - Skips dead shells (hp=0) and town shells.
+///   - Per-shell phase offset (shell_id % 4) — only 1/4 of shells act per
+///     call, so 250ms tick × 4 phases = each shell decides every ~1s, but
+///     the actions are spread out across the second instead of bursting.
+///   - Picks among the top-3 closest enemies (weighted toward closest) so
+///     ten shells don't dogpile the same poring.
+///   - Tries skill_picker_choose first; CAST if a skill matches, else ATTACK.
 /// The map-server's ATTACK handler drives the chase via unit_walktobl when
 /// out of range (BL_PC's client-driven chase doesn't fire for shells).
 static TIMER_FUNC(aichrif_combat_timer){
 	using namespace rathena::server_ai;
 	if (aichrif_state != 2 || char_fd < 0) return 0;
+	static uint32 phase = 0;
+	phase = (phase + 1) & 3;
 	t_tick now = gettick();
 	for (auto& s : g_shells_local) {
+		if ((s.shell_id & 3) != phase) continue; // tick offset
 		if (s.last_report_tick == 0) continue;
 		if (DIFF_TICK(now, s.last_report_tick) > 3000) continue;
 		if (s.hp == 0) continue;
@@ -443,7 +450,15 @@ static TIMER_FUNC(aichrif_combat_timer){
 		// kicked off the flee is already in flight from aichrif_parse_event.
 		if (s.fleeing_until && DIFF_TICK(now, s.fleeing_until) < 0) continue;
 		if (s.enemy_count == 0) continue;
-		uint32 tid = s.enemies[0].id;
+		// Target jitter: pick among top-3 closest (or fewer). Weights:
+		// 50% closest, 30% second, 20% third. With <3 enemies, falls back.
+		uint8 max_pick = (uint8)std::min<uint8>(s.enemy_count, 3);
+		uint8 r = (uint8)(rnd() % 100);
+		uint8 idx = (max_pick >= 3 && r >= 80) ? 2
+				 : (max_pick >= 2 && r >= 50) ? 1
+				 : 0;
+		uint32 tid = s.enemies[idx].id;
+		if (tid == 0) tid = s.enemies[0].id;
 		if (tid == 0) continue;
 
 		const skill_rotation* rot = skill_picker_get(s.job);
@@ -453,9 +468,11 @@ static TIMER_FUNC(aichrif_combat_timer){
 			ctx.hp = s.hp; ctx.max_hp = s.max_hp;
 			ctx.sp = s.sp; ctx.max_sp = s.max_sp;
 			ctx.has_target = true;
-			ctx.target_hp_pct = s.enemies[0].hp_pct;
-			ctx.target_distance = s.enemies[0].distance;
+			ctx.target_hp_pct = s.enemies[idx].hp_pct;
+			ctx.target_distance = s.enemies[idx].distance;
 			ctx.enemy_count_nearby = s.enemy_count;
+			ctx.map_zone = (uint8)((s.cat == spawn_category::TOWN) ? 1
+				: (s.cat == spawn_category::FIELD) ? 2 : 3);
 			pick = skill_picker_choose(*rot, ctx, &s.skill_cursor);
 		}
 		if (pick != nullptr && !pick->skill_name.empty()) {
