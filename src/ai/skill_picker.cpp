@@ -11,6 +11,7 @@
 #include <ryml.hpp>
 
 #include <common/malloc.hpp>
+#include <common/random.hpp>
 #include <common/showmsg.hpp>
 
 namespace rathena::server_ai {
@@ -162,6 +163,73 @@ bool skill_picker_load(const char* yaml_path){
 const skill_rotation* skill_picker_get(uint16 job){
 	auto it = g_rotations.find(job);
 	return it == g_rotations.end() ? nullptr : &it->second;
+}
+
+/// Evaluate one condition against the shell context. Returns true if the
+/// gate passes. Status-name conditions (enemy_status/self_status/ally_status)
+/// always pass for now — Phase 2 doesn't carry SC info in REPORT yet, so
+/// they're treated as no-op satisfied; refine in Phase 3.
+static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
+	auto pct = [](uint32 cur, uint32 max) -> int32 {
+		if (max == 0) return 0;
+		return (int32)((uint64)cur * 100 / max);
+	};
+	switch (e.condition) {
+		case skill_cond::ALWAYS:           return true;
+		case skill_cond::HP_BELOW:         return pct(ctx.hp, ctx.max_hp) < e.cond_value_num;
+		case skill_cond::HP_ABOVE:         return pct(ctx.hp, ctx.max_hp) > e.cond_value_num;
+		case skill_cond::SP_BELOW:         return pct(ctx.sp, ctx.max_sp) < e.cond_value_num;
+		case skill_cond::SP_ABOVE:         return pct(ctx.sp, ctx.max_sp) > e.cond_value_num;
+		case skill_cond::ENEMY_HP_BELOW:   return ctx.has_target && ctx.target_hp_pct < e.cond_value_num;
+		case skill_cond::ENEMY_HP_ABOVE:   return ctx.has_target && ctx.target_hp_pct > e.cond_value_num;
+		case skill_cond::DISTANCE_BELOW:   return ctx.has_target && ctx.target_distance <= e.cond_value_num;
+		case skill_cond::DISTANCE_ABOVE:   return ctx.has_target && ctx.target_distance >  e.cond_value_num;
+		case skill_cond::ENEMY_COUNT_NEARBY: return ctx.enemy_count_nearby >= e.cond_value_num;
+		case skill_cond::ALLY_COUNT_NEARBY: return ctx.ally_count_nearby  >= e.cond_value_num;
+		case skill_cond::MAP_ZONE:         return ctx.map_zone == e.cond_value_num;
+		// Phase 2 stubs: pass-through. Phase 3 wires REPORT extensions.
+		case skill_cond::ENEMY_STATUS:
+		case skill_cond::NOT_ENEMY_STATUS:
+		case skill_cond::SELF_STATUS:
+		case skill_cond::NOT_SELF_STATUS:
+		case skill_cond::ALLY_STATUS:
+		case skill_cond::NOT_ALLY_STATUS:
+		case skill_cond::ALLY_HP_BELOW:
+		case skill_cond::HAS_SPHERE:
+		case skill_cond::ENEMY_HIDDEN:
+		case skill_cond::ENEMY_CASTING:
+		case skill_cond::ENEMY_CASTING_GROUND:
+		case skill_cond::CELL_HAS_SKILL_UNIT:
+		case skill_cond::SELF_TARGETED:
+		case skill_cond::ENEMY_ELEMENT:
+		case skill_cond::ENEMY_RACE:
+		case skill_cond::ENEMY_IS_BOSS:
+		case skill_cond::MELEE_ATTACKED:
+		case skill_cond::RANGE_ATTACKED:
+			return true;
+	}
+	return true;
+}
+
+const skill_entry* skill_picker_choose(const skill_rotation& rot,
+		const shell_ctx& ctx, size_t* cursor){
+	if (rot.skills.empty()) return nullptr;
+	size_t n = rot.skills.size();
+	size_t start = (cursor != nullptr) ? (*cursor % n) : 0;
+	for (size_t i = 0; i < n; i++) {
+		size_t idx = (start + i) % n;
+		const skill_entry& e = rot.skills[idx];
+		if (e.rate == 0) continue;
+		// State filter: HAS_TARGET needs a target, NO_TARGET forbids one.
+		if (e.state == skill_state::HAS_TARGET && !ctx.has_target) continue;
+		if (e.state == skill_state::NO_TARGET  &&  ctx.has_target) continue;
+		if (!cond_passes(e, ctx)) continue;
+		// Per-10000 rate roll.
+		if (e.rate < 10000 && (int32)(rnd() % 10000) >= e.rate) continue;
+		if (cursor != nullptr) *cursor = (idx + 1) % n;
+		return &e;
+	}
+	return nullptr;
 }
 
 }

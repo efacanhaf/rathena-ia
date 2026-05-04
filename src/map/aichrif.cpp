@@ -27,6 +27,7 @@
 #include "map.hpp"
 #include "mob.hpp"
 #include "pc.hpp"
+#include "skill.hpp"
 #include "status.hpp"
 #include "unit.hpp"
 
@@ -35,6 +36,9 @@ extern int32 char_fd; ///< inter-server fd to char-server (defined in chrif.cpp)
 namespace {
 /// account_id -> sd, lifetime-managed by aishell_create / aishell_destroy.
 std::unordered_map<uint32, map_session_data*> g_shells;
+/// Per-shell hp tracking so the REPORT timer can synthesise ATTACKED_BY
+/// events without hooking status_damage (status.cpp is off-limits).
+std::unordered_map<uint32, uint32> g_last_hp;
 }
 
 bool aishell_is_shell(uint32 account_id){
@@ -219,6 +223,7 @@ void aishell_destroy(uint32 shell_id){
 	if (it == g_shells.end()) return;
 	map_session_data* sd = it->second;
 	g_shells.erase(it);
+	g_last_hp.erase(shell_id);
 
 	clif_clearunit_area(*sd, CLR_OUTSIGHT);
 	map_delblock(sd);
@@ -284,8 +289,45 @@ static int32 ai_report_collect_mob(block_list* bl, va_list ap){
 	return 1;
 }
 
+/// Emit a SHELL_EVENT (0x2b52) async notification to ai-server.
+static void aichrif_send_event(uint32 shell_id, uint8 kind, uint32 actor_id, uint32 dmg){
+	if (char_fd < 0 || session[char_fd] == nullptr) return;
+	PACKET_AI_SHELL_EVENT_S e{};
+	e.cmd = PACKET_AI_SHELL_EVENT;
+	e.len = sizeof(e);
+	e.shell_id = shell_id;
+	e.kind = kind;
+	e.actor_id = actor_id;
+	e.dmg = dmg;
+	WFIFOHEAD(char_fd, sizeof(e));
+	memcpy(WFIFOP(char_fd, 0), &e, sizeof(e));
+	WFIFOSET(char_fd, sizeof(e));
+}
+
 static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 	if (char_fd < 0 || session[char_fd] == nullptr) return;
+
+	// Synthesise ATTACKED_BY from hp delta. Without hooking status_damage we
+	// can't see the real attacker, so attribute the damage to the closest
+	// nearby enemy when one exists. Phase 3 can add a proper hook.
+	uint32 cur_hp = (uint32)sd->battle_status.hp;
+	auto it = g_last_hp.find(shell_id);
+	if (it != g_last_hp.end()) {
+		if (cur_hp == 0 && it->second > 0) {
+			aichrif_send_event(shell_id, AI_EVT_DIED, 0, it->second);
+		} else if (cur_hp < it->second) {
+			uint32 dmg = it->second - cur_hp;
+			// Find the closest BL_MOB as best-guess attacker.
+			enemy_scan_ctx pre{};
+			pre.center = sd;
+			map_foreachinrange(ai_report_collect_mob, sd, 4, BL_MOB, &pre);
+			uint32 actor = pre.count ? pre.rows[0].id : 0;
+			aichrif_send_event(shell_id, AI_EVT_ATTACKED_BY, actor, dmg);
+		} else if (cur_hp > 0 && it->second == 0) {
+			aichrif_send_event(shell_id, AI_EVT_RESURRECTED, 0, 0);
+		}
+	}
+	g_last_hp[shell_id] = cur_hp;
 
 	enemy_scan_ctx ctx{};
 	ctx.center = sd;
@@ -379,6 +421,24 @@ static int32 aichrif_handle_cmd(int32 fd){
 		}
 		case AI_CMD_STOP_ATTACK: {
 			unit_stop_attack(sd);
+			break;
+		}
+		case AI_CMD_CAST: {
+			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_CAST_S)) return 0;
+			const PACKET_AI_CMD_CAST_S* c = (const PACKET_AI_CMD_CAST_S*)RFIFOP(fd, 0);
+			char nm[sizeof(c->skill_name) + 1] = {0};
+			memcpy(nm, c->skill_name, sizeof(c->skill_name));
+			uint16 sid = skill_name2id(nm);
+			if (sid == 0) {
+				ShowWarning("ai-server: CAST unknown skill '%s' (shell %u).\n", nm, hdr->shell_id);
+				break;
+			}
+			if (c->kind == 1) {
+				unit_skilluse_pos(sd, c->x, c->y, sid, c->skill_lv);
+			} else {
+				uint32 tid = (c->kind == 2) ? sd->id : c->target_id;
+				unit_skilluse_id(sd, tid, sid, c->skill_lv);
+			}
 			break;
 		}
 		default:

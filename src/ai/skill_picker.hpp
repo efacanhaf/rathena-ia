@@ -78,6 +78,25 @@ bool skill_picker_load(const char* yaml_path);
 /// job has no entry (caller falls back to plain melee).
 const skill_rotation* skill_picker_get(uint16 job);
 
+/// Snapshot of the shell context the picker needs to evaluate conditions.
+/// Filled from the latest REPORT for that shell. All fields zero-default.
+struct shell_ctx {
+	uint32 hp = 0, max_hp = 0;
+	uint32 sp = 0, max_sp = 0;
+	bool has_target = false;
+	uint16 target_hp_pct = 0;
+	uint8  target_distance = 0;
+	uint8  enemy_count_nearby = 0;
+	uint8  ally_count_nearby = 0;
+	uint8  map_zone = 0; // 1=town,2=field,3=dungeon (Phase 3)
+};
+
+/// Pick the next skill from the rotation that passes its condition gate
+/// and a per-rate roll. cursor is mutated (round-robin start). Returns
+/// nullptr if nothing matches.
+const skill_entry* skill_picker_choose(const skill_rotation& rot,
+		const shell_ctx& ctx, size_t* cursor);
+
 /// Parses a condition name (e.g. "hp_below") to its enum. Returns ALWAYS for
 /// the empty/missing case and SC_NONE-equivalent unknown for typos (logged).
 skill_cond skill_picker_parse_cond(const std::string& s);

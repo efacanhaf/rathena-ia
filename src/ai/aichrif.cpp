@@ -18,6 +18,7 @@
 #include "ai-server.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
+#include "skill_picker.hpp"
 #include "spawner.hpp"
 
 int32 char_fd = -1;
@@ -25,6 +26,7 @@ int32 char_fd = -1;
 namespace {
 struct shell_state {
 	uint32 shell_id;
+	uint16 job;            // for skill rotation lookup
 	uint16 base_x, base_y; // anchor point; wander stays within ±radius
 	// Last REPORT snapshot (Phase 2.2). Zeroed until first packet arrives.
 	uint16 cur_x, cur_y;
@@ -34,6 +36,10 @@ struct shell_state {
 	uint8  enemy_count;
 	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
 	t_tick last_report_tick;
+	t_tick last_cast_tick;  // throttle CAST attempts per shell
+	t_tick fleeing_until;   // gettick() < this → don't engage, run away
+	size_t skill_cursor;    // round-robin cursor into skill rotation
+	uint32 last_attacker;   // most recent ATTACKED_BY actor_id
 };
 std::vector<shell_state> g_shells_local;
 std::unordered_map<uint32, size_t> g_shell_idx; // shell_id -> g_shells_local index
@@ -47,11 +53,9 @@ size_t g_spawn_target_idx = 0;
 uint16 g_spawn_within = 0;
 int32  g_spawn_pending = 0;
 int32  g_spawn_emitted = 0;
-constexpr int32 SPAWN_BATCH_PER_TICK = 1;
-// Phase 2.3 isolation: single shell at a known fixed pos so combat
-// behavior can be observed without wander noise.
-constexpr int32 SPAWN_HARD_CAP = 1;
-constexpr uint16 PIN_X = 158, PIN_Y = 327; // prt_fild08, central poring spawn
+constexpr int32 SPAWN_BATCH_PER_TICK = 2;
+// Phase 2.3 multi-shell: 10 shells around the prt_fild08 mob cluster.
+constexpr int32 SPAWN_HARD_CAP = 10;
 }
 
 /// 0 = not connected
@@ -83,6 +87,25 @@ int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool cont
 	p.hdr.op = AI_CMD_ATTACK;
 	p.target_id = target_id;
 	p.continuous = continuous ? 1 : 0;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
+
+int32 aichrif_send_cast(int32 fd, uint32 shell_id, const char* skill_name,
+		uint16 skill_lv, uint8 kind, uint32 target_id, uint16 x, uint16 y){
+	PACKET_AI_CMD_CAST_S p{};
+	p.hdr.cmd = PACKET_AI_SHELL_CMD;
+	p.hdr.len = sizeof(p);
+	p.hdr.shell_id = shell_id;
+	p.hdr.op = AI_CMD_CAST;
+	safestrncpy(p.skill_name, skill_name, sizeof(p.skill_name));
+	p.skill_lv = skill_lv;
+	p.kind = kind;
+	p.target_id = target_id;
+	p.x = x;
+	p.y = y;
 	WFIFOHEAD(fd, sizeof(p));
 	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
 	WFIFOSET(fd, sizeof(p));
@@ -166,6 +189,44 @@ static int32 aichrif_parse_shell_spawned(int32 fd){
 	return 1;
 }
 
+/// 0x2b52 SHELL_EVENT — async notification from map-server.
+static int32 aichrif_parse_event(int32 fd){
+	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_EVENT_S)) return 0;
+	const PACKET_AI_SHELL_EVENT_S* p = (const PACKET_AI_SHELL_EVENT_S*)RFIFOP(fd, 0);
+	auto it = g_shell_idx.find(p->shell_id);
+	if (it != g_shell_idx.end() && it->second < g_shells_local.size()) {
+		shell_state& s = g_shells_local[it->second];
+		switch (p->kind) {
+			case AI_EVT_ATTACKED_BY: {
+				s.last_attacker = p->actor_id;
+				// Flee if HP gets low: pause combat for 4s and move away.
+				int32 hp_pct = (s.max_hp > 0)
+					? (int32)((uint64)s.hp * 100 / s.max_hp) : 100;
+				if (hp_pct < 30) {
+					s.fleeing_until = gettick() + 4000;
+					int16 dx = ((rnd() % 21) - 10) + ((rnd() & 1) ? 8 : -8);
+					int16 dy = ((rnd() % 21) - 10) + ((rnd() & 1) ? 8 : -8);
+					uint16 tx = (uint16)std::max<int16>(1, (int16)s.cur_x + dx);
+					uint16 ty = (uint16)std::max<int16>(1, (int16)s.cur_y + dy);
+					aichrif_send_walk_to(char_fd, s.shell_id, tx, ty);
+				}
+				break;
+			}
+			case AI_EVT_DIED:
+				s.target_id = 0;
+				s.fleeing_until = 0;
+				break;
+			case AI_EVT_RESURRECTED:
+				s.fleeing_until = 0;
+				break;
+			default:
+				break;
+		}
+	}
+	RFIFOSKIP(fd, p->len);
+	return 1;
+}
+
 /// 0x2b51 REPORT { ... } — periodic shell snapshot from map-server.
 static int32 aichrif_parse_report(int32 fd){
 	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_REPORT_S)) return 0;
@@ -222,6 +283,10 @@ int32 aichrif_parse(int32 fd){
 				break;
 			case PACKET_AI_SHELL_REPORT:
 				if (!aichrif_parse_report(fd))
+					return 0;
+				break;
+			case PACKET_AI_SHELL_EVENT:
+				if (!aichrif_parse_event(fd))
 					return 0;
 				break;
 			default:
@@ -299,9 +364,9 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		}
 		char nm[NAME_LENGTH];
 		names_generate(nm);
-		// Phase 2.3 single-shell pin: spawn at the same cell every time.
-		uint16 bx = PIN_X;
-		uint16 by = PIN_Y;
+		// Phase 2.3 multi-shell: spread around the prt_fild08 mob cluster.
+		uint16 bx = (uint16)(150 + (rnd() % 30));    // 150..179
+		uint16 by = (uint16)(320 + (rnd() % 30));    // 320..349
 		ai_shell_init init{};
 		init.shell_id = sid;
 		init.name = nm;
@@ -319,6 +384,7 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		aichrif_send_shell_spawn(char_fd, init);
 		shell_state st{};
 		st.shell_id = sid;
+		st.job = t.job;
 		st.base_x = bx;
 		st.base_y = by;
 		g_shell_idx[sid] = g_shells_local.size();
@@ -333,10 +399,12 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 
 static TIMER_FUNC(aichrif_wander_timer){
 	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now_w = gettick();
 	for (auto& s : g_shells_local) {
 		// Don't override an active attack with a walk command.
 		if (s.target_id != 0) continue;
 		if (s.hp == 0) continue;
+		if (s.fleeing_until && DIFF_TICK(now_w, s.fleeing_until) < 0) continue;
 		// Anchor walk on the shell's current position (REPORT-fed). Falls back
 		// to spawn anchor if no REPORT yet (cur_x is 0).
 		uint16 cx = s.cur_x ? s.cur_x : s.base_x;
@@ -350,21 +418,52 @@ static TIMER_FUNC(aichrif_wander_timer){
 	return 0;
 }
 
-/// Phase 2.3: combat tick. Sends AI_CMD_ATTACK on the closest enemy. The
-/// map-server's aichrif_handle_cmd ATTACK case drives the chase via
-/// unit_walktobl when out of range (BL_PC's client-driven chase doesn't fire
-/// for shells). Skips dead shells so corpses don't keep targeting.
+/// Phase 2.3+2.5/2.6: combat tick.
+///   - Skips dead shells (hp=0).
+///   - Tries skill_picker_choose first; if a skill matches, send AI_CMD_CAST.
+///   - Otherwise send AI_CMD_ATTACK on the closest enemy.
+/// The map-server's ATTACK handler drives the chase via unit_walktobl when
+/// out of range (BL_PC's client-driven chase doesn't fire for shells).
 static TIMER_FUNC(aichrif_combat_timer){
+	using namespace rathena::server_ai;
 	if (aichrif_state != 2 || char_fd < 0) return 0;
 	t_tick now = gettick();
 	for (auto& s : g_shells_local) {
 		if (s.last_report_tick == 0) continue;
 		if (DIFF_TICK(now, s.last_report_tick) > 3000) continue;
-		if (s.hp == 0) continue; // dead — let respawn/cleanup handle it
+		if (s.hp == 0) continue;
+		// Fleeing: skip engagement until the timer expires; the WALK_TO that
+		// kicked off the flee is already in flight from aichrif_parse_event.
+		if (s.fleeing_until && DIFF_TICK(now, s.fleeing_until) < 0) continue;
 		if (s.enemy_count == 0) continue;
 		uint32 tid = s.enemies[0].id;
 		if (tid == 0) continue;
-		aichrif_send_attack(char_fd, s.shell_id, tid, true);
+
+		const skill_rotation* rot = skill_picker_get(s.job);
+		const skill_entry* pick = nullptr;
+		if (rot != nullptr && DIFF_TICK(now, s.last_cast_tick) > 1500) {
+			shell_ctx ctx;
+			ctx.hp = s.hp; ctx.max_hp = s.max_hp;
+			ctx.sp = s.sp; ctx.max_sp = s.max_sp;
+			ctx.has_target = true;
+			ctx.target_hp_pct = s.enemies[0].hp_pct;
+			ctx.target_distance = s.enemies[0].distance;
+			ctx.enemy_count_nearby = s.enemy_count;
+			pick = skill_picker_choose(*rot, ctx, &s.skill_cursor);
+		}
+		if (pick != nullptr && !pick->skill_name.empty()) {
+			uint8 kind = AI_CAST_KIND_ID;
+			uint32 cast_target = tid;
+			if (pick->target == skill_target::SELF) {
+				kind = AI_CAST_KIND_SELF;
+				cast_target = 0;
+			}
+			aichrif_send_cast(char_fd, s.shell_id, pick->skill_name.c_str(),
+				pick->level, kind, cast_target, 0, 0);
+			s.last_cast_tick = now;
+		} else {
+			aichrif_send_attack(char_fd, s.shell_id, tid, true);
+		}
 	}
 	return 0;
 }

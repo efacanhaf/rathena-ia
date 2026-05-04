@@ -62,6 +62,10 @@ constexpr uint8 AI_CMD_SAY         = 4;
 constexpr uint8 AI_CMD_EMOTE       = 5;
 constexpr uint8 AI_CMD_STOP_ATTACK = 6;
 
+constexpr uint8 AI_CAST_KIND_ID     = 0;
+constexpr uint8 AI_CAST_KIND_GROUND = 1;
+constexpr uint8 AI_CAST_KIND_SELF   = 2;
+
 struct PACKET_AI_CMD_WALK_TO_S {
 	PACKET_AI_SHELL_CMD_HEADER hdr;
 	uint16 x;
@@ -78,6 +82,19 @@ struct PACKET_AI_CMD_ATTACK_S {
 /// AI_CMD_STOP_ATTACK — stop the current attack chain.
 struct PACKET_AI_CMD_STOP_ATTACK_S {
 	PACKET_AI_SHELL_CMD_HEADER hdr;
+};
+
+/// AI_CMD_CAST — cast a skill on a target id (BL) or on a ground cell (x,y).
+/// kind: 0 = id-targeted, 1 = ground-targeted, 2 = self-targeted.
+/// SkillId is sent as a string so the map-server can resolve via skill_db.
+struct PACKET_AI_CMD_CAST_S {
+	PACKET_AI_SHELL_CMD_HEADER hdr;
+	char   skill_name[24];
+	uint16 skill_lv;
+	uint8  kind;        // 0=id, 1=ground, 2=self
+	uint8  pad;
+	uint32 target_id;   // when kind=0 or kind=2
+	uint16 x, y;        // when kind=1
 };
 
 /// PACKET_AI_SHELL_SPAWNED (0x2b50) — map-server ack
@@ -100,6 +117,25 @@ struct PACKET_AI_NEARBY_ENEMY {
 };
 
 constexpr uint8 AI_REPORT_MAX_ENEMIES = 8;
+
+/// PACKET_AI_SHELL_EVENT (0x2b52) — async map → ai notification.
+/// kind tells the payload shape: ATTACKED_BY supplies attacker_id+dmg,
+/// DIED supplies killer_id, WHISPERED_BY/MENTIONED reserved for Phase 3.
+constexpr uint8 AI_EVT_ATTACKED_BY     = 1;
+constexpr uint8 AI_EVT_DIED            = 2;
+constexpr uint8 AI_EVT_RESURRECTED     = 3;
+constexpr uint8 AI_EVT_WHISPERED_BY    = 4;
+constexpr uint8 AI_EVT_MENTIONED       = 5;
+
+struct PACKET_AI_SHELL_EVENT_S {
+	uint16 cmd;
+	uint16 len;
+	uint32 shell_id;
+	uint8  kind;
+	uint8  pad[3];
+	uint32 actor_id;     // attacker / killer / whisperer
+	uint32 dmg;          // ATTACKED_BY only
+};
 
 /// PACKET_AI_SHELL_REPORT (0x2b51) — periodic map → ai snapshot.
 /// Fixed-size to keep parsing trivial; padded with zeroed enemies if fewer.
