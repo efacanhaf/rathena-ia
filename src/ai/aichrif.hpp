@@ -62,6 +62,20 @@ int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id);
 /// Drift correction warp (Phase 3.7).
 int32 aichrif_send_warp(int32 fd, uint32 shell_id, const char* map_name, uint16 x, uint16 y);
 
+/// Phase 3.9 runtime counters (read by the console "stats" command).
+struct ai_stats {
+	uint32 spawned;
+	uint32 spawn_acked_ok;
+	uint32 spawn_acked_err;
+	uint32 attacks_sent;
+	uint32 casts_sent;
+	uint32 chats_sent;
+	uint32 warps_drift;
+	uint32 attacked_by_events;
+	uint32 died_events;
+};
+const ai_stats& aichrif_stats();
+
 /// Inter-server packet opcodes (kept here so ai-server doesn't depend on map/).
 constexpr uint16 PACKET_AI_HELLO         = 0x2b30;
 constexpr uint16 PACKET_AI_ACK           = 0x2b31;

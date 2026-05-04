@@ -26,6 +26,9 @@
 
 int32 char_fd = -1;
 
+static ai_stats g_stats{};
+const ai_stats& aichrif_stats(){ return g_stats; }
+
 namespace {
 struct shell_state {
 	uint32 shell_id;
@@ -103,6 +106,7 @@ int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool cont
 	WFIFOHEAD(fd, sizeof(p));
 	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
 	WFIFOSET(fd, sizeof(p));
+	g_stats.attacks_sent++;
 	return 0;
 }
 
@@ -126,6 +130,7 @@ int32 aichrif_send_stand(int32 fd, uint32 shell_id){
 }
 
 int32 aichrif_send_warp(int32 fd, uint32 shell_id, const char* map_name, uint16 x, uint16 y){
+	g_stats.warps_drift++;
 	PACKET_AI_CMD_WARP_S p{};
 	p.hdr.cmd = PACKET_AI_SHELL_CMD;
 	p.hdr.len = sizeof(p);
@@ -154,6 +159,7 @@ int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id){
 }
 
 int32 aichrif_send_say(int32 fd, uint32 shell_id, const char* msg){
+	g_stats.chats_sent++;
 	PACKET_AI_CMD_SAY_S p{};
 	p.hdr.cmd = PACKET_AI_SHELL_CMD;
 	p.hdr.len = sizeof(p);
@@ -169,6 +175,7 @@ int32 aichrif_send_say(int32 fd, uint32 shell_id, const char* msg){
 
 int32 aichrif_send_cast(int32 fd, uint32 shell_id, const char* skill_name,
 		uint16 skill_lv, uint8 kind, uint32 target_id, uint16 x, uint16 y){
+	g_stats.casts_sent++;
 	PACKET_AI_CMD_CAST_S p{};
 	p.hdr.cmd = PACKET_AI_SHELL_CMD;
 	p.hdr.len = sizeof(p);
@@ -258,6 +265,8 @@ static int32 aichrif_parse_connectack(int32 fd){
 static int32 aichrif_parse_shell_spawned(int32 fd){
 	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_SPAWNED_S)) return 0;
 	const PACKET_AI_SHELL_SPAWNED_S* p = (const PACKET_AI_SHELL_SPAWNED_S*)RFIFOP(fd, 0);
+	if (p->ok) g_stats.spawn_acked_ok++;
+	else       g_stats.spawn_acked_err++;
 	ShowInfo("ai-server: shell %u spawn ack ok=%u err=%u.\n", p->shell_id, p->ok, p->err);
 	RFIFOSKIP(fd, p->len);
 	return 1;
@@ -272,6 +281,7 @@ static int32 aichrif_parse_event(int32 fd){
 		shell_state& s = g_shells_local[it->second];
 		switch (p->kind) {
 			case AI_EVT_ATTACKED_BY: {
+				g_stats.attacked_by_events++;
 				s.last_attacker = p->actor_id;
 				// Flee if HP gets low: pause combat for 4s and move away.
 				int32 hp_pct = (s.max_hp > 0)
@@ -287,6 +297,7 @@ static int32 aichrif_parse_event(int32 fd){
 				break;
 			}
 			case AI_EVT_DIED:
+				g_stats.died_events++;
 				s.target_id = 0;
 				s.fleeing_until = 0;
 				break;
@@ -458,6 +469,7 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		init.dir = (uint8)(rnd() % 8);
 		init.behavior_id = 0;
 		aichrif_send_shell_spawn(char_fd, init);
+		g_stats.spawned++;
 		shell_state st{};
 		st.shell_id = sid;
 		st.job = t.job;

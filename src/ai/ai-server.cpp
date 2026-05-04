@@ -42,6 +42,18 @@ int32 parse_console(const char* buf){
 	} else if (strcmpi(buf, "status") == 0) {
 		ShowInfo("ai-server status: char_fd=%d, aichrif_state=%d, shells_active=%u, total_allocs=%u\n",
 			char_fd, aichrif_state, shell_pool_active_count(), shell_pool_total_allocs());
+	} else if (strcmpi(buf, "stats") == 0) {
+		const ai_stats& s = aichrif_stats();
+		ShowInfo("ai-server stats:\n");
+		ShowInfo("  spawned          = %u\n", s.spawned);
+		ShowInfo("  spawn_acked_ok   = %u\n", s.spawn_acked_ok);
+		ShowInfo("  spawn_acked_err  = %u\n", s.spawn_acked_err);
+		ShowInfo("  attacks_sent     = %u\n", s.attacks_sent);
+		ShowInfo("  casts_sent       = %u\n", s.casts_sent);
+		ShowInfo("  chats_sent       = %u\n", s.chats_sent);
+		ShowInfo("  warps_drift      = %u\n", s.warps_drift);
+		ShowInfo("  attacked_by_evts = %u\n", s.attacked_by_events);
+		ShowInfo("  died_events      = %u\n", s.died_events);
 	} else if (strcmpi(buf, "alive") == 0) {
 		ShowInfo("ai-server: I'm alive.\n");
 	} else if (strncmpi(buf, "alloc ", 6) == 0) {
@@ -61,7 +73,7 @@ int32 parse_console(const char* buf){
 		ShowInfo("ai-server: reload chat=%s skill_db=%s\n",
 			ok_chat ? "OK" : "FAIL", ok_sk ? "OK" : "FAIL");
 	} else {
-		ShowInfo("Console commands: status | alive | alloc <N> | reload | shutdown\n");
+		ShowInfo("Console commands: status | stats | alive | alloc <N> | reload | shutdown\n");
 	}
 	return 0;
 }
