@@ -61,6 +61,8 @@ constexpr uint8 AI_CMD_CAST        = 3;
 constexpr uint8 AI_CMD_SAY         = 4;
 constexpr uint8 AI_CMD_EMOTE       = 5;
 constexpr uint8 AI_CMD_STOP_ATTACK = 6;
+constexpr uint8 AI_CMD_SIT         = 7;
+constexpr uint8 AI_CMD_STAND       = 8;
 
 constexpr uint8 AI_CAST_KIND_ID     = 0;
 constexpr uint8 AI_CAST_KIND_GROUND = 1;
@@ -89,6 +91,13 @@ struct PACKET_AI_CMD_SAY_S {
 	PACKET_AI_SHELL_CMD_HEADER hdr;
 	uint16 mes_len;
 	char   mes[120];
+};
+
+/// AI_CMD_EMOTE — play an emoticon over the shell.
+struct PACKET_AI_CMD_EMOTE_S {
+	PACKET_AI_SHELL_CMD_HEADER hdr;
+	uint8 emote_id;
+	uint8 pad[3];
 };
 
 /// AI_CMD_CAST — cast a skill on a target id (BL) or on a ground cell (x,y).

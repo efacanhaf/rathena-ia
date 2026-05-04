@@ -40,6 +40,8 @@ struct shell_state {
 	t_tick last_report_tick;
 	t_tick last_cast_tick;  // throttle CAST attempts per shell
 	t_tick last_chat_tick;  // throttle ambient chat per shell
+	t_tick last_action_tick;
+	bool   sitting;
 	t_tick fleeing_until;   // gettick() < this → don't engage, run away
 	size_t skill_cursor;    // round-robin cursor into skill rotation
 	uint32 last_attacker;   // most recent ATTACKED_BY actor_id
@@ -92,6 +94,38 @@ int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool cont
 	p.hdr.op = AI_CMD_ATTACK;
 	p.target_id = target_id;
 	p.continuous = continuous ? 1 : 0;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
+
+static int32 aichrif_send_simple_op(int32 fd, uint32 shell_id, uint8 op){
+	PACKET_AI_SHELL_CMD_HEADER p{};
+	p.cmd = PACKET_AI_SHELL_CMD;
+	p.len = sizeof(p);
+	p.shell_id = shell_id;
+	p.op = op;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
+
+int32 aichrif_send_sit(int32 fd, uint32 shell_id){
+	return aichrif_send_simple_op(fd, shell_id, AI_CMD_SIT);
+}
+int32 aichrif_send_stand(int32 fd, uint32 shell_id){
+	return aichrif_send_simple_op(fd, shell_id, AI_CMD_STAND);
+}
+
+int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id){
+	PACKET_AI_CMD_EMOTE_S p{};
+	p.hdr.cmd = PACKET_AI_SHELL_CMD;
+	p.hdr.len = sizeof(p);
+	p.hdr.shell_id = shell_id;
+	p.hdr.op = AI_CMD_EMOTE;
+	p.emote_id = emote_id;
 	WFIFOHEAD(fd, sizeof(p));
 	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
 	WFIFOSET(fd, sizeof(p));
@@ -424,6 +458,7 @@ static TIMER_FUNC(aichrif_wander_timer){
 		// Don't override an active attack with a walk command.
 		if (s.target_id != 0) continue;
 		if (s.hp == 0) continue;
+		if (s.sitting) continue; // sitting → stay put
 		if (s.fleeing_until && DIFF_TICK(now_w, s.fleeing_until) < 0) continue;
 		// Anchor walk on the shell's current position (REPORT-fed). Falls back
 		// to spawn anchor if no REPORT yet (cur_x is 0).
@@ -508,6 +543,46 @@ static TIMER_FUNC(aichrif_combat_timer){
 	return 0;
 }
 
+/// Phase 3.5: ambient action — sit/stand cycle for town shells, occasional
+/// emote everywhere. Phase-sliced + per-shell throttled so the world looks
+/// alive without bursts.
+static TIMER_FUNC(aichrif_action_timer){
+	using namespace rathena::server_ai;
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	static uint32 act_phase = 0;
+	act_phase = (act_phase + 1) & 7;
+	for (auto& s : g_shells_local) {
+		if ((s.shell_id & 7) != act_phase) continue;
+		if (s.last_report_tick == 0) continue;
+		if (s.hp == 0) continue;
+		if (s.target_id != 0) continue; // engaged → don't fidget
+		if (s.fleeing_until && DIFF_TICK(now, s.fleeing_until) < 0) continue;
+		if (s.last_action_tick && DIFF_TICK(now, s.last_action_tick) < 12000) continue;
+		uint32 r = rnd() % 100;
+		if (s.cat == spawn_category::TOWN) {
+			// 40% toggle sit/stand, 25% emote, 35% nothing.
+			if (r < 40) {
+				if (s.sitting) { aichrif_send_stand(char_fd, s.shell_id); s.sitting = false; }
+				else           { aichrif_send_sit(char_fd, s.shell_id);   s.sitting = true; }
+				s.last_action_tick = now;
+			} else if (r < 65) {
+				static const uint8 emotes[] = { 0, 1, 2, 3, 18, 23, 28, 30, 33, 50 };
+				aichrif_send_emote(char_fd, s.shell_id, emotes[rnd() % (sizeof(emotes)/sizeof(emotes[0]))]);
+				s.last_action_tick = now;
+			}
+		} else {
+			// Field/dungeon: rare emote between mobs.
+			if (r < 15) {
+				static const uint8 emotes_f[] = { 1, 6, 7, 8, 28, 33, 49 };
+				aichrif_send_emote(char_fd, s.shell_id, emotes_f[rnd() % (sizeof(emotes_f)/sizeof(emotes_f[0]))]);
+				s.last_action_tick = now;
+			}
+		}
+	}
+	return 0;
+}
+
 /// Phase 3.4: ambient chat. Every tick, walk a slice of shells (phase
 /// offset so they don't all chat at once) and pick a category based on
 /// state — town/idle, combat hunt, low-hp lost. Each shell self-throttles.
@@ -559,6 +634,9 @@ void do_init_aichrif(void){
 	// Ambient chat: every 3s pick a few shells and have them say a line.
 	add_timer_func_list(aichrif_chat_timer, "aichrif_chat");
 	add_timer_interval(gettick() + 8 * 1000, aichrif_chat_timer, 0, 0, 3000);
+	// Ambient action: sit/stand/emote for town shells; rare emote elsewhere.
+	add_timer_func_list(aichrif_action_timer, "aichrif_action");
+	add_timer_interval(gettick() + 10 * 1000, aichrif_action_timer, 0, 0, 5000);
 	// Spawn drain: 20 SHELL_SPAWN packets per 200ms = 100/s ramp-up.
 	add_timer_func_list(aichrif_spawn_drain_timer, "aichrif_spawn_drain");
 	add_timer_interval(gettick() + 1 * 1000, aichrif_spawn_drain_timer, 0, 0, 200);

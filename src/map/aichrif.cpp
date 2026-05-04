@@ -426,6 +426,28 @@ static int32 aichrif_handle_cmd(int32 fd){
 			unit_stop_attack(sd);
 			break;
 		}
+		case AI_CMD_SIT: {
+			if (!pc_issit(sd)) {
+				pc_setsit(sd);
+				skill_sit(sd, true);
+				clif_sitting(*sd);
+			}
+			break;
+		}
+		case AI_CMD_STAND: {
+			if (pc_issit(sd)) {
+				pc_setstand(sd, true);
+				skill_sit(sd, false);
+				clif_standing(*sd);
+			}
+			break;
+		}
+		case AI_CMD_EMOTE: {
+			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_EMOTE_S)) return 0;
+			const PACKET_AI_CMD_EMOTE_S* e = (const PACKET_AI_CMD_EMOTE_S*)RFIFOP(fd, 0);
+			clif_emotion(*sd, (emotion_type)e->emote_id);
+			break;
+		}
 		case AI_CMD_SAY: {
 			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_SAY_S)) return 0;
 			const PACKET_AI_CMD_SAY_S* s = (const PACKET_AI_CMD_SAY_S*)RFIFOP(fd, 0);
@@ -436,7 +458,7 @@ static int32 aichrif_handle_cmd(int32 fd){
 			int32 n = snprintf(buf, sizeof(buf), "%s : %.*s",
 				sd->status.name, plen, s->mes);
 			if (n > 0)
-				clif_disp_overhead(sd, buf);
+				clif_disp_overhead(static_cast<block_list*>(sd), buf);
 			break;
 		}
 		case AI_CMD_CAST: {
