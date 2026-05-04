@@ -44,6 +44,9 @@ int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
 /// Tell the map-server to walk a shell to (x, y).
 int32 aichrif_send_walk_to(int32 fd, uint32 shell_id, uint16 x, uint16 y);
 
+/// Tell the map-server to start auto-attacking a target.
+int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool continuous);
+
 /// Inter-server packet opcodes (kept here so ai-server doesn't depend on map/).
 constexpr uint16 PACKET_AI_HELLO         = 0x2b30;
 constexpr uint16 PACKET_AI_ACK           = 0x2b31;

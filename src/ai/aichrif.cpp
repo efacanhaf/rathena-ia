@@ -37,7 +37,9 @@ struct shell_state {
 };
 std::vector<shell_state> g_shells_local;
 std::unordered_map<uint32, size_t> g_shell_idx; // shell_id -> g_shells_local index
-constexpr uint16 WANDER_RADIUS = 6;
+// Free-roam wander: pick a step from the shell's *current* position, not from
+// a fixed spawn anchor. Step size is small so movement looks natural.
+constexpr uint16 WANDER_STEP = 8;
 
 // Spawn-emission cursor: walks through spawner_targets() in chunks so the
 // network buffer isn't blown up at startup.
@@ -45,8 +47,11 @@ size_t g_spawn_target_idx = 0;
 uint16 g_spawn_within = 0;
 int32  g_spawn_pending = 0;
 int32  g_spawn_emitted = 0;
-constexpr int32 SPAWN_BATCH_PER_TICK = 5;
-constexpr int32 SPAWN_HARD_CAP = 50;
+constexpr int32 SPAWN_BATCH_PER_TICK = 1;
+// Phase 2.3 isolation: single shell at a known fixed pos so combat
+// behavior can be observed without wander noise.
+constexpr int32 SPAWN_HARD_CAP = 1;
+constexpr uint16 PIN_X = 158, PIN_Y = 327; // prt_fild08, central poring spawn
 }
 
 /// 0 = not connected
@@ -64,6 +69,20 @@ int32 aichrif_send_walk_to(int32 fd, uint32 shell_id, uint16 x, uint16 y){
 	p.hdr.op = AI_CMD_WALK_TO;
 	p.x = x;
 	p.y = y;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
+
+int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool continuous){
+	PACKET_AI_CMD_ATTACK_S p{};
+	p.hdr.cmd = PACKET_AI_SHELL_CMD;
+	p.hdr.len = sizeof(p);
+	p.hdr.shell_id = shell_id;
+	p.hdr.op = AI_CMD_ATTACK;
+	p.target_id = target_id;
+	p.continuous = continuous ? 1 : 0;
 	WFIFOHEAD(fd, sizeof(p));
 	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
 	WFIFOSET(fd, sizeof(p));
@@ -261,15 +280,18 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 	if (aichrif_state != 2 || char_fd < 0) return 0;
 	if (g_spawn_emitted >= SPAWN_HARD_CAP) return 0;
 	const auto& targets = spawner_targets();
+	if (targets.empty()) return 0;
 	int32 emitted = 0;
-	while (emitted < SPAWN_BATCH_PER_TICK && g_spawn_target_idx < targets.size() &&
-			g_spawn_emitted < SPAWN_HARD_CAP) {
-		const auto& t = targets[g_spawn_target_idx];
-		if (g_spawn_within >= t.count) {
-			g_spawn_target_idx++;
-			g_spawn_within = 0;
+	while (emitted < SPAWN_BATCH_PER_TICK && g_spawn_emitted < SPAWN_HARD_CAP) {
+		// Random target each draw so the hard cap doesn't favor whichever
+		// job sat at the front of the shuffled cursor.
+		size_t idx = (size_t)(rnd() % targets.size());
+		const auto& t = targets[idx];
+		if (t.count == 0) {
+			emitted++; // avoid infinite loop on empty entries
 			continue;
 		}
+		(void)g_spawn_target_idx; (void)g_spawn_within;
 		uint32 sid = shell_pool_alloc();
 		if (sid == 0) {
 			g_spawn_pending = 0;
@@ -277,9 +299,9 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		}
 		char nm[NAME_LENGTH];
 		names_generate(nm);
-		// Tight prontera bbox (validated). Per-map walkable sampling later.
-		uint16 bx = (uint16)(146 + (rnd() % 21));    // 146..166
-		uint16 by = (uint16)(170 + (rnd() % 21));    // 170..190
+		// Phase 2.3 single-shell pin: spawn at the same cell every time.
+		uint16 bx = PIN_X;
+		uint16 by = PIN_Y;
 		ai_shell_init init{};
 		init.shell_id = sid;
 		init.name = nm;
@@ -287,9 +309,9 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		init.sex = (uint8)(rnd() % 2);
 		init.hair = (uint16)(1 + rnd() % 20);
 		init.hair_color = (uint16)(rnd() % 8);
-		// Phase 1.5c: ignore yaml's map list, force prontera until the
-		// walkable-cell sampler lands.
-		init.map_name = "prontera";
+		// Phase 2.3 smoke test: force prt_fild08; full per-map sampler
+		// is Phase 3.
+		init.map_name = "prt_fild08";
 		init.x = bx;
 		init.y = by;
 		init.dir = (uint8)(rnd() % 8);
@@ -312,11 +334,37 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 static TIMER_FUNC(aichrif_wander_timer){
 	if (aichrif_state != 2 || char_fd < 0) return 0;
 	for (auto& s : g_shells_local) {
-		int16 dx = (rnd() % (WANDER_RADIUS * 2 + 1)) - WANDER_RADIUS;
-		int16 dy = (rnd() % (WANDER_RADIUS * 2 + 1)) - WANDER_RADIUS;
-		uint16 tx = (uint16)std::max<int16>(1, (int16)s.base_x + dx);
-		uint16 ty = (uint16)std::max<int16>(1, (int16)s.base_y + dy);
+		// Don't override an active attack with a walk command.
+		if (s.target_id != 0) continue;
+		if (s.hp == 0) continue;
+		// Anchor walk on the shell's current position (REPORT-fed). Falls back
+		// to spawn anchor if no REPORT yet (cur_x is 0).
+		uint16 cx = s.cur_x ? s.cur_x : s.base_x;
+		uint16 cy = s.cur_y ? s.cur_y : s.base_y;
+		int16 dx = (rnd() % (WANDER_STEP * 2 + 1)) - WANDER_STEP;
+		int16 dy = (rnd() % (WANDER_STEP * 2 + 1)) - WANDER_STEP;
+		uint16 tx = (uint16)std::max<int16>(1, (int16)cx + dx);
+		uint16 ty = (uint16)std::max<int16>(1, (int16)cy + dy);
 		aichrif_send_walk_to(char_fd, s.shell_id, tx, ty);
+	}
+	return 0;
+}
+
+/// Phase 2.3: combat tick. Sends AI_CMD_ATTACK on the closest enemy. The
+/// map-server's aichrif_handle_cmd ATTACK case drives the chase via
+/// unit_walktobl when out of range (BL_PC's client-driven chase doesn't fire
+/// for shells). Skips dead shells so corpses don't keep targeting.
+static TIMER_FUNC(aichrif_combat_timer){
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	for (auto& s : g_shells_local) {
+		if (s.last_report_tick == 0) continue;
+		if (DIFF_TICK(now, s.last_report_tick) > 3000) continue;
+		if (s.hp == 0) continue; // dead — let respawn/cleanup handle it
+		if (s.enemy_count == 0) continue;
+		uint32 tid = s.enemies[0].id;
+		if (tid == 0) continue;
+		aichrif_send_attack(char_fd, s.shell_id, tid, true);
 	}
 	return 0;
 }
@@ -337,6 +385,9 @@ void do_init_aichrif(void){
 	// Wander loop: every 5s, each tracked shell picks a new destination.
 	add_timer_func_list(aichrif_wander_timer, "aichrif_wander");
 	add_timer_interval(gettick() + 5 * 1000, aichrif_wander_timer, 0, 0, 5 * 1000);
+	// Combat tick: every 250ms, re-issue ATTACK so a stalled chase resumes.
+	add_timer_func_list(aichrif_combat_timer, "aichrif_combat");
+	add_timer_interval(gettick() + 2 * 1000, aichrif_combat_timer, 0, 0, 250);
 	// Spawn drain: 20 SHELL_SPAWN packets per 200ms = 100/s ramp-up.
 	add_timer_func_list(aichrif_spawn_drain_timer, "aichrif_spawn_drain");
 	add_timer_interval(gettick() + 1 * 1000, aichrif_spawn_drain_timer, 0, 0, 200);

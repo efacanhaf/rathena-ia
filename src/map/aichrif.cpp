@@ -156,8 +156,37 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->base_status.speed = DEFAULT_WALK_SPEED;
 	sd->battle_status.size = SZ_SMALL;
 	sd->battle_status.race = RC_PLAYER_HUMAN;
-	sd->base_status.mode = MD_CANMOVE;
-	sd->battle_status.mode = MD_CANMOVE;
+	sd->base_status.mode = (e_mode)(MD_CANMOVE | MD_CANATTACK);
+	sd->battle_status.mode = (e_mode)(MD_CANMOVE | MD_CANATTACK);
+	// Melee range 1 — without this, status_get_range returns 0 and
+	// unit_attack/battle_check_range never lets the shell connect.
+	sd->battle_status.rhw.range = 1;
+	sd->base_status.rhw.range = 1;
+	sd->battle_status.amotion = 1000; // attack motion
+	sd->battle_status.adelay = 1500;  // attack delay
+	sd->battle_status.dmotion = 500;  // damage motion
+	// Phase 2 baseline so hit rate isn't garbage. Without status_calc_pc
+	// running, hit/flee/atk all default to 0 and the shell whiffs every
+	// poring. Real per-job stat tables come in Phase 4 (job profiles).
+	sd->status.base_level = 50;
+	sd->status.job_level = 30;
+	sd->status.str = 50; sd->status.agi = 50; sd->status.vit = 30;
+	sd->status.int_ = 30; sd->status.dex = 50; sd->status.luk = 30;
+	sd->battle_status.str = 50; sd->battle_status.agi = 50; sd->battle_status.vit = 30;
+	sd->battle_status.int_ = 30; sd->battle_status.dex = 50; sd->battle_status.luk = 30;
+	sd->battle_status.batk = 80;
+	sd->battle_status.rhw.atk = 80;
+	sd->battle_status.rhw.atk2 = 100;
+	sd->battle_status.hit = 150;       // base_lv 50 + dex 50 + buffer
+	sd->battle_status.flee = 100;      // base_lv 50 + agi 50
+	sd->battle_status.flee2 = 10;
+	sd->battle_status.cri = 10;
+	sd->battle_status.def = 5;
+	sd->battle_status.def2 = 10;
+	sd->battle_status.mdef = 5;
+	sd->battle_status.mdef2 = 10;
+	sd->battle_status.matk_min = 30;
+	sd->battle_status.matk_max = 50;
 
 	// Vars allocator (used by anti-bot, scripts; safe to alloc empty).
 	sd->regs.vars = i64db_alloc(DB_OPT_BASE);
@@ -203,7 +232,7 @@ void aishell_destroy(uint32 shell_id){
 // REPORT timer: streams shell snapshot + nearby_enemies back to ai-server.
 // ---------------------------------------------------------------------------
 
-constexpr int16 AI_REPORT_RANGE = 12;   // cells; matches AREA_SIZE-ish vision
+constexpr int16 AI_REPORT_RANGE = 20;   // wider than client AREA so shells engage early
 constexpr int32 AI_REPORT_PERIOD_MS = 1000;
 
 namespace {
@@ -318,6 +347,11 @@ static int32 aichrif_handle_cmd(int32 fd){
 		ShowWarning("ai-server: SHELL_CMD for unknown shell %u (op=%u).\n", hdr->shell_id, hdr->op);
 		return 1;
 	}
+	// Drop motion/attack commands while the shell is dead so corpses don't
+	// teleport or respawn from leftover ATTACKs in the AI queue. Resurrection
+	// (skill/item from a player) bypasses this — it goes through status code
+	// directly and restores hp; once hp > 0 the AI naturally resumes.
+	if (sd->battle_status.hp == 0) return 1;
 	switch (hdr->op) {
 		case AI_CMD_WALK_TO: {
 			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_WALK_TO_S)) return 0;
@@ -330,6 +364,16 @@ static int32 aichrif_handle_cmd(int32 fd){
 		case AI_CMD_ATTACK: {
 			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_ATTACK_S)) return 0;
 			const PACKET_AI_CMD_ATTACK_S* a = (const PACKET_AI_CMD_ATTACK_S*)RFIFOP(fd, 0);
+			block_list* tgt = map_id2bl(a->target_id);
+			if (tgt == nullptr) break;
+			int32 range = sd->battle_status.rhw.range;
+			// unit_attack_timer_sub treats BL_PC as client-driven chase: when
+			// the target is out of range it sends clif_movetoattack and waits
+			// for a WALK_TO from the client. Shells have no client, so we
+			// drive the chase here just like mob_data does (unit.cpp:3274).
+			if (!check_distance_bl(sd, tgt, range)) {
+				unit_walktobl(sd, tgt, range, 1 | 2); // easy walk + chase mode
+			}
 			unit_attack(sd, a->target_id, a->continuous);
 			break;
 		}
