@@ -4,6 +4,7 @@
 #include "aichrif.hpp"
 
 #include <cstring>
+#include <ctime>
 #include <unordered_map>
 #include <vector>
 
@@ -543,6 +544,23 @@ static TIMER_FUNC(aichrif_combat_timer){
 	return 0;
 }
 
+/// Phase 3.6: real-clock day phase — 0 day (06-18), 1 evening (18-22),
+/// 2 night (22-06). Drives ambient probabilities so the population
+/// "breathes" with the time of day.
+static uint8 day_phase(){
+	std::time_t t = std::time(nullptr);
+	std::tm lt{};
+#if defined(_WIN32)
+	localtime_s(&lt, &t);
+#else
+	localtime_r(&t, &lt);
+#endif
+	int32 h = lt.tm_hour;
+	if (h >= 6 && h < 18) return 0;   // day
+	if (h >= 18 && h < 22) return 1;  // evening
+	return 2;                         // night
+}
+
 /// Phase 3.5: ambient action — sit/stand cycle for town shells, occasional
 /// emote everywhere. Phase-sliced + per-shell throttled so the world looks
 /// alive without bursts.
@@ -560,13 +578,17 @@ static TIMER_FUNC(aichrif_action_timer){
 		if (s.fleeing_until && DIFF_TICK(now, s.fleeing_until) < 0) continue;
 		if (s.last_action_tick && DIFF_TICK(now, s.last_action_tick) < 12000) continue;
 		uint32 r = rnd() % 100;
+		uint8 phase_now = day_phase();
 		if (s.cat == spawn_category::TOWN) {
-			// 40% toggle sit/stand, 25% emote, 35% nothing.
-			if (r < 40) {
+			// Day: 40% sit/stand, 25% emote. Evening: more sociable (50/30).
+			// Night: more sleepy (60% sit, less emote).
+			uint32 sit_t = (phase_now == 1 ? 50 : (phase_now == 2 ? 60 : 40));
+			uint32 emo_t = sit_t + (phase_now == 0 ? 25 : (phase_now == 1 ? 30 : 10));
+			if (r < sit_t) {
 				if (s.sitting) { aichrif_send_stand(char_fd, s.shell_id); s.sitting = false; }
 				else           { aichrif_send_sit(char_fd, s.shell_id);   s.sitting = true; }
 				s.last_action_tick = now;
-			} else if (r < 65) {
+			} else if (r < emo_t) {
 				static const uint8 emotes[] = { 0, 1, 2, 3, 18, 23, 28, 30, 33, 50 };
 				aichrif_send_emote(char_fd, s.shell_id, emotes[rnd() % (sizeof(emotes)/sizeof(emotes[0]))]);
 				s.last_action_tick = now;
@@ -596,14 +618,16 @@ static TIMER_FUNC(aichrif_chat_timer){
 		if ((s.shell_id & 7) != chat_phase) continue;
 		if (s.last_report_tick == 0) continue;
 		if (s.hp == 0) continue;
-		// Per-shell throttle: max one line every ~25-40s.
-		if (s.last_chat_tick && DIFF_TICK(now, s.last_chat_tick) < 25000) continue;
-		// 30% chance per eligible shell so even the matching slice isn't a wall of text.
-		if ((rnd() % 100) >= 30) continue;
+		// Per-shell throttle: max one line every ~25-40s; even longer at night.
+		uint8 ph = day_phase();
+		t_tick min_gap = (ph == 2 ? 60000 : (ph == 1 ? 25000 : 30000));
+		if (s.last_chat_tick && DIFF_TICK(now, s.last_chat_tick) < min_gap) continue;
+		uint32 chance = (ph == 2 ? 12 : (ph == 1 ? 35 : 30));
+		if ((rnd() % 100) >= chance) continue;
 		const char* cat = "idle";
 		if (s.cat == spawn_category::DUNGEON) cat = (s.enemy_count > 0) ? "hunt" : "grind";
 		else if (s.cat == spawn_category::FIELD) cat = (s.enemy_count > 0) ? "hunt" : "grind";
-		else cat = (rnd() & 1) ? "idle" : "greet";
+		else cat = (ph == 2) ? "night_day" : ((rnd() & 1) ? "idle" : "greet");
 		const std::string* line = chat_pick(cat);
 		if (line == nullptr || line->empty()) continue;
 		aichrif_send_say(char_fd, s.shell_id, line->c_str());
