@@ -84,6 +84,13 @@ struct PACKET_AI_CMD_STOP_ATTACK_S {
 	PACKET_AI_SHELL_CMD_HEADER hdr;
 };
 
+/// AI_CMD_SAY — chat overhead the shell, broadcast to nearby clients.
+struct PACKET_AI_CMD_SAY_S {
+	PACKET_AI_SHELL_CMD_HEADER hdr;
+	uint16 mes_len;
+	char   mes[120];
+};
+
 /// AI_CMD_CAST — cast a skill on a target id (BL) or on a ground cell (x,y).
 /// kind: 0 = id-targeted, 1 = ground-targeted, 2 = self-targeted.
 /// SkillId is sent as a string so the map-server can resolve via skill_db.

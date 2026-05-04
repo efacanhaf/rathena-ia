@@ -16,6 +16,7 @@
 #include <common/timer.hpp>
 
 #include "ai-server.hpp"
+#include "chat.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
 #include "skill_picker.hpp"
@@ -38,6 +39,7 @@ struct shell_state {
 	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
 	t_tick last_report_tick;
 	t_tick last_cast_tick;  // throttle CAST attempts per shell
+	t_tick last_chat_tick;  // throttle ambient chat per shell
 	t_tick fleeing_until;   // gettick() < this → don't engage, run away
 	size_t skill_cursor;    // round-robin cursor into skill rotation
 	uint32 last_attacker;   // most recent ATTACKED_BY actor_id
@@ -90,6 +92,20 @@ int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool cont
 	p.hdr.op = AI_CMD_ATTACK;
 	p.target_id = target_id;
 	p.continuous = continuous ? 1 : 0;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
+
+int32 aichrif_send_say(int32 fd, uint32 shell_id, const char* msg){
+	PACKET_AI_CMD_SAY_S p{};
+	p.hdr.cmd = PACKET_AI_SHELL_CMD;
+	p.hdr.len = sizeof(p);
+	p.hdr.shell_id = shell_id;
+	p.hdr.op = AI_CMD_SAY;
+	safestrncpy(p.mes, msg, sizeof(p.mes));
+	p.mes_len = (uint16)strnlen(p.mes, sizeof(p.mes));
 	WFIFOHEAD(fd, sizeof(p));
 	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
 	WFIFOSET(fd, sizeof(p));
@@ -492,6 +508,35 @@ static TIMER_FUNC(aichrif_combat_timer){
 	return 0;
 }
 
+/// Phase 3.4: ambient chat. Every tick, walk a slice of shells (phase
+/// offset so they don't all chat at once) and pick a category based on
+/// state — town/idle, combat hunt, low-hp lost. Each shell self-throttles.
+static TIMER_FUNC(aichrif_chat_timer){
+	using namespace rathena::server_ai;
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	static uint32 chat_phase = 0;
+	chat_phase = (chat_phase + 1) & 7;
+	for (auto& s : g_shells_local) {
+		if ((s.shell_id & 7) != chat_phase) continue;
+		if (s.last_report_tick == 0) continue;
+		if (s.hp == 0) continue;
+		// Per-shell throttle: max one line every ~25-40s.
+		if (s.last_chat_tick && DIFF_TICK(now, s.last_chat_tick) < 25000) continue;
+		// 30% chance per eligible shell so even the matching slice isn't a wall of text.
+		if ((rnd() % 100) >= 30) continue;
+		const char* cat = "idle";
+		if (s.cat == spawn_category::DUNGEON) cat = (s.enemy_count > 0) ? "hunt" : "grind";
+		else if (s.cat == spawn_category::FIELD) cat = (s.enemy_count > 0) ? "hunt" : "grind";
+		else cat = (rnd() & 1) ? "idle" : "greet";
+		const std::string* line = chat_pick(cat);
+		if (line == nullptr || line->empty()) continue;
+		aichrif_send_say(char_fd, s.shell_id, line->c_str());
+		s.last_chat_tick = now;
+	}
+	return 0;
+}
+
 void do_init_aichrif(void){
 	char_fd = -1;
 	aichrif_state = 0;
@@ -511,6 +556,9 @@ void do_init_aichrif(void){
 	// Combat tick: every 250ms, re-issue ATTACK so a stalled chase resumes.
 	add_timer_func_list(aichrif_combat_timer, "aichrif_combat");
 	add_timer_interval(gettick() + 2 * 1000, aichrif_combat_timer, 0, 0, 250);
+	// Ambient chat: every 3s pick a few shells and have them say a line.
+	add_timer_func_list(aichrif_chat_timer, "aichrif_chat");
+	add_timer_interval(gettick() + 8 * 1000, aichrif_chat_timer, 0, 0, 3000);
 	// Spawn drain: 20 SHELL_SPAWN packets per 200ms = 100/s ramp-up.
 	add_timer_func_list(aichrif_spawn_drain_timer, "aichrif_spawn_drain");
 	add_timer_interval(gettick() + 1 * 1000, aichrif_spawn_drain_timer, 0, 0, 200);

@@ -51,6 +51,9 @@ int32 aichrif_send_attack(int32 fd, uint32 shell_id, uint32 target_id, bool cont
 int32 aichrif_send_cast(int32 fd, uint32 shell_id, const char* skill_name,
 		uint16 skill_lv, uint8 kind, uint32 target_id, uint16 x, uint16 y);
 
+/// Make a shell broadcast a chat line over its head (AREA).
+int32 aichrif_send_say(int32 fd, uint32 shell_id, const char* msg);
+
 /// Inter-server packet opcodes (kept here so ai-server doesn't depend on map/).
 constexpr uint16 PACKET_AI_HELLO         = 0x2b30;
 constexpr uint16 PACKET_AI_ACK           = 0x2b31;

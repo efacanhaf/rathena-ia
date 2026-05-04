@@ -177,6 +177,7 @@
   <ItemGroup>
     <ClCompile Include="ai-server.cpp" />
     <ClCompile Include="aichrif.cpp" />
+    <ClCompile Include="chat.cpp" />
     <ClCompile Include="names.cpp" />
     <ClCompile Include="shell_pool.cpp" />
     <ClCompile Include="skill_picker.cpp" />
@@ -185,6 +186,7 @@
   <ItemGroup>
     <ClInclude Include="ai-server.hpp" />
     <ClInclude Include="aichrif.hpp" />
+    <ClInclude Include="chat.hpp" />
     <ClInclude Include="names.hpp" />
     <ClInclude Include="shell_pool.hpp" />
     <ClInclude Include="skill_picker.hpp" />

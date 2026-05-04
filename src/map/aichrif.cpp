@@ -426,6 +426,19 @@ static int32 aichrif_handle_cmd(int32 fd){
 			unit_stop_attack(sd);
 			break;
 		}
+		case AI_CMD_SAY: {
+			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_SAY_S)) return 0;
+			const PACKET_AI_CMD_SAY_S* s = (const PACKET_AI_CMD_SAY_S*)RFIFOP(fd, 0);
+			char buf[200];
+			int32 plen = (int32)s->mes_len;
+			if (plen <= 0 || plen >= (int32)sizeof(s->mes)) break;
+			// "Name : message" overhead + AREA broadcast.
+			int32 n = snprintf(buf, sizeof(buf), "%s : %.*s",
+				sd->status.name, plen, s->mes);
+			if (n > 0)
+				clif_disp_overhead(sd, buf);
+			break;
+		}
 		case AI_CMD_CAST: {
 			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_CAST_S)) return 0;
 			const PACKET_AI_CMD_CAST_S* c = (const PACKET_AI_CMD_CAST_S*)RFIFOP(fd, 0);

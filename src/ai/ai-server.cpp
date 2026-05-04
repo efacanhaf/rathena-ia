@@ -18,6 +18,7 @@
 #include <config/core.hpp>
 
 #include "aichrif.hpp"
+#include "chat.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
 #include "skill_picker.hpp"
@@ -136,6 +137,11 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 	// Phase 2.4: per-job skill rotations + condition gates.
 	if (!rathena::server_ai::skill_picker_load("db/ai/population_skill_db.yml")) {
 		ShowWarning("ai-server: skill_picker not loaded; shells will only auto-attack.\n");
+	}
+
+	// Phase 3.4: ambient chat lines.
+	if (!rathena::server_ai::chat_load("db/ai/population_chat.yml")) {
+		ShowWarning("ai-server: chat lines not loaded; shells will be silent.\n");
 	}
 
 	do_init_aichrif();
