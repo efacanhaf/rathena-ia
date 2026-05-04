@@ -55,16 +55,29 @@ struct PACKET_AI_SHELL_CMD_HEADER {
 	uint8  op;
 };
 
-constexpr uint8 AI_CMD_WALK_TO  = 1;
-constexpr uint8 AI_CMD_ATTACK   = 2;
-constexpr uint8 AI_CMD_CAST     = 3;
-constexpr uint8 AI_CMD_SAY      = 4;
-constexpr uint8 AI_CMD_EMOTE    = 5;
+constexpr uint8 AI_CMD_WALK_TO     = 1;
+constexpr uint8 AI_CMD_ATTACK      = 2;
+constexpr uint8 AI_CMD_CAST        = 3;
+constexpr uint8 AI_CMD_SAY         = 4;
+constexpr uint8 AI_CMD_EMOTE       = 5;
+constexpr uint8 AI_CMD_STOP_ATTACK = 6;
 
 struct PACKET_AI_CMD_WALK_TO_S {
 	PACKET_AI_SHELL_CMD_HEADER hdr;
 	uint16 x;
 	uint16 y;
+};
+
+/// AI_CMD_ATTACK — start auto-attack on a target (mob or shell).
+struct PACKET_AI_CMD_ATTACK_S {
+	PACKET_AI_SHELL_CMD_HEADER hdr;
+	uint32 target_id;
+	uint8  continuous; // 1=keep attacking, 0=single hit
+};
+
+/// AI_CMD_STOP_ATTACK — stop the current attack chain.
+struct PACKET_AI_CMD_STOP_ATTACK_S {
+	PACKET_AI_SHELL_CMD_HEADER hdr;
 };
 
 /// PACKET_AI_SHELL_SPAWNED (0x2b50) — map-server ack

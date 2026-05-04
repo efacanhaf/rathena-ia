@@ -230,6 +230,16 @@ static int32 aichrif_handle_cmd(int32 fd){
 			unit_walktoxy(sd, w->x, w->y, 2);
 			break;
 		}
+		case AI_CMD_ATTACK: {
+			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_ATTACK_S)) return 0;
+			const PACKET_AI_CMD_ATTACK_S* a = (const PACKET_AI_CMD_ATTACK_S*)RFIFOP(fd, 0);
+			unit_attack(sd, a->target_id, a->continuous);
+			break;
+		}
+		case AI_CMD_STOP_ATTACK: {
+			unit_stop_attack(sd);
+			break;
+		}
 		default:
 			ShowWarning("ai-server: SHELL_CMD unknown op=%u (shell %u).\n", hdr->op, hdr->shell_id);
 			break;
