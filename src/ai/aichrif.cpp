@@ -17,6 +17,7 @@
 #include "ai-server.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
+#include "spawner.hpp"
 
 int32 char_fd = -1;
 
@@ -27,6 +28,15 @@ struct shell_state {
 };
 std::vector<shell_state> g_shells_local;
 constexpr uint16 WANDER_RADIUS = 6;
+
+// Spawn-emission cursor: walks through spawner_targets() in chunks so the
+// network buffer isn't blown up at startup.
+size_t g_spawn_target_idx = 0;
+uint16 g_spawn_within = 0;
+int32  g_spawn_pending = 0;
+int32  g_spawn_emitted = 0;
+constexpr int32 SPAWN_BATCH_PER_TICK = 5;
+constexpr int32 SPAWN_HARD_CAP = 50;
 }
 
 /// 0 = not connected
@@ -109,37 +119,12 @@ static int32 aichrif_parse_connectack(int32 fd){
 	aichrif_state = 2;
 	ShowStatus("ai-server: handshake OK with char-server (fd=%d).\n", fd);
 
-	// Phase 1.5b: spawn POPULATION_INIT shells across prontera. YAML parser
-	// for population_spawn.yml will replace the hardcoded layout in 1.5c.
-	constexpr int32 POPULATION_INIT = 50;
-	// Mix of basic jobs to make the crowd look heterogeneous.
-	const uint16 jobs[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 4001, 4002, 4003 };
-	const int32 num_jobs = (int32)(sizeof(jobs) / sizeof(jobs[0]));
-	int32 spawned = 0;
-	for (int32 i = 0; i < POPULATION_INIT; i++) {
-		uint32 sid = shell_pool_alloc();
-		if (sid == 0) break;
-		char nm[NAME_LENGTH];
-		names_generate(nm);
-		uint16 bx = (uint16)(146 + (rnd() % 21));   // 146..166
-		uint16 by = (uint16)(170 + (rnd() % 21));   // 170..190
-		ai_shell_init init{};
-		init.shell_id = sid;
-		init.name = nm;
-		init.class_ = jobs[rnd() % num_jobs];
-		init.sex = (uint8)(rnd() % 2);
-		init.hair = (uint16)(1 + rnd() % 20);
-		init.hair_color = (uint16)(rnd() % 8);
-		init.map_name = "prontera";
-		init.x = bx;
-		init.y = by;
-		init.dir = (uint8)(rnd() % 8);
-		init.behavior_id = 0;
-		aichrif_send_shell_spawn(fd, init);
-		g_shells_local.push_back({sid, bx, by});
-		spawned++;
-	}
-	ShowStatus("ai-server: requested %d shells in prontera.\n", spawned);
+	// Phase 1.5c: queue spawn requests; the throttled timer will drain them
+	// over time so we don't saturate map-server's wfifo at startup.
+	g_spawn_pending = 0;
+	for (const auto& t : spawner_targets())
+		g_spawn_pending += t.count;
+	ShowStatus("ai-server: queued %d shells from population_spawn.yml.\n", g_spawn_pending);
 	return 1;
 }
 
@@ -238,6 +223,53 @@ static TIMER_FUNC(aichrif_ping_timer){
 	return 0;
 }
 
+static TIMER_FUNC(aichrif_spawn_drain_timer){
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	if (g_spawn_emitted >= SPAWN_HARD_CAP) return 0;
+	const auto& targets = spawner_targets();
+	int32 emitted = 0;
+	while (emitted < SPAWN_BATCH_PER_TICK && g_spawn_target_idx < targets.size() &&
+			g_spawn_emitted < SPAWN_HARD_CAP) {
+		const auto& t = targets[g_spawn_target_idx];
+		if (g_spawn_within >= t.count) {
+			g_spawn_target_idx++;
+			g_spawn_within = 0;
+			continue;
+		}
+		uint32 sid = shell_pool_alloc();
+		if (sid == 0) {
+			g_spawn_pending = 0;
+			return 0;
+		}
+		char nm[NAME_LENGTH];
+		names_generate(nm);
+		// Tight prontera bbox (validated). Per-map walkable sampling later.
+		uint16 bx = (uint16)(146 + (rnd() % 21));    // 146..166
+		uint16 by = (uint16)(170 + (rnd() % 21));    // 170..190
+		ai_shell_init init{};
+		init.shell_id = sid;
+		init.name = nm;
+		init.class_ = t.job;
+		init.sex = (uint8)(rnd() % 2);
+		init.hair = (uint16)(1 + rnd() % 20);
+		init.hair_color = (uint16)(rnd() % 8);
+		// Phase 1.5c: ignore yaml's map list, force prontera until the
+		// walkable-cell sampler lands.
+		init.map_name = "prontera";
+		init.x = bx;
+		init.y = by;
+		init.dir = (uint8)(rnd() % 8);
+		init.behavior_id = 0;
+		aichrif_send_shell_spawn(char_fd, init);
+		g_shells_local.push_back({sid, bx, by});
+		g_spawn_within++;
+		g_spawn_pending--;
+		g_spawn_emitted++;
+		emitted++;
+	}
+	return 0;
+}
+
 static TIMER_FUNC(aichrif_wander_timer){
 	if (aichrif_state != 2 || char_fd < 0) return 0;
 	for (auto& s : g_shells_local) {
@@ -266,6 +298,9 @@ void do_init_aichrif(void){
 	// Wander loop: every 5s, each tracked shell picks a new destination.
 	add_timer_func_list(aichrif_wander_timer, "aichrif_wander");
 	add_timer_interval(gettick() + 5 * 1000, aichrif_wander_timer, 0, 0, 5 * 1000);
+	// Spawn drain: 20 SHELL_SPAWN packets per 200ms = 100/s ramp-up.
+	add_timer_func_list(aichrif_spawn_drain_timer, "aichrif_spawn_drain");
+	add_timer_interval(gettick() + 1 * 1000, aichrif_spawn_drain_timer, 0, 0, 200);
 }
 
 void do_final_aichrif(void){

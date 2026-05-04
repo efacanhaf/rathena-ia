@@ -1,0 +1,839 @@
+# This file is a part of rAthena.
+#   Copyright(C) 2021 rAthena Development Team
+#   https://rathena.org - https://github.com/rathena
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+#
+###########################################################################
+# Population Engine Spawn Database
+###########################################################################
+#
+# Autosummon spawn map lists for the population engine.
+# Extracted from population_engine.yml so GMs can tune map populations
+# without touching gear/AI configuration.
+#
+###########################################################################
+# - Job:                         e_job id (must match a job in population_engine.yml).
+#   Towns:                       Map name list for towns category.
+#   Fields:                      Map name list for fields category.
+#   Dungeons:                    Map name list for dungeons category.
+#   TownsPopulation:             Total target shell count across all Towns maps.
+#   TownsMaxPerMap:              Hard cap per individual town map (0 = no cap, default).
+#   FieldsPopulation:            Total target shell count across all Fields maps.
+#   FieldsMaxPerMap:             Hard cap per individual field map (0 = no cap, default).
+#   DungeonsPopulation:          Total target shell count across all Dungeons maps.
+#   DungeonsMaxPerMap:           Hard cap per individual dungeon map (0 = no cap, default).
+#     Each map gets floor(N/count) shells; first (N%count) maps get +1 to reach N exactly.
+#     MaxPerMap clamps the per-map target after distribution (useful when one map in a large
+#     list would otherwise absorb the entire remainder allocation).
+#     0 or omit disables that category.
+###########################################################################
+
+Header:
+  Type: POPULATION_SPAWN_DB
+  Version: 1
+
+Body:
+  - Job: 0  # Novice
+    Towns:
+      - new_1-1
+      - new_1-2
+      - new_1-3
+    TownsPopulation: 100
+
+  - Job: 4001  # High Novice
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - prt_fild01
+      - prt_fild02
+      - prt_fild03
+      - prt_fild04
+      - prt_fild05
+      - prt_fild06
+      - prt_fild07
+      - prt_fild08
+      - prt_fild09
+      - prt_fild10
+      - prt_fild11
+    FieldsPopulation: 100
+
+  - Job: 23  # Super Novice
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - prt_fild01
+      - prt_fild02
+      - prt_fild03
+      - prt_fild04
+      - prt_fild05
+      - prt_fild06
+      - prt_fild07
+      - prt_fild08
+      - prt_fild09
+      - prt_fild10
+      - prt_fild11
+    FieldsPopulation: 100
+
+  - Job: 1  # Swordsman
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Dungeons:
+      - prt_maze01
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+    DungeonsPopulation: 100
+
+  - Job: 4002  # High Swordsman
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Dungeons:
+      - prt_maze01
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+    DungeonsPopulation: 100
+
+  - Job: 7  # Knight
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - prt_fild01
+      - prt_fild02
+      - prt_fild03
+      - prt_fild04
+      - prt_fild05
+      - prt_fild06
+      - prt_fild07
+      - prt_fild08
+      - prt_fild09
+      - prt_fild10
+      - prt_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - prt_maze01
+      - prt_maze02
+      - prt_maze03
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+      - iz_dun03
+      - iz_dun04
+    DungeonsPopulation: 100
+
+  - Job: 4008  # Lord Knight
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Dungeons:
+      - prt_maze03
+      - prt_sewb4
+      - iz_dun04
+      - in_sphinx4
+      - in_sphinx5
+      - abyss_02
+    DungeonsPopulation: 100
+
+  - Job: 14  # Crusader
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - prt_maze01
+      - prt_maze02
+      - prt_maze03
+      - prt_sewb1
+      - prt_sewb2
+      - prt_sewb3
+      - prt_sewb4
+      - iz_dun00
+      - iz_dun01
+      - iz_dun02
+      - iz_dun03
+      - iz_dun04
+    DungeonsPopulation: 100
+
+  - Job: 4015  # Paladin
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - nif_fild01
+      - nif_fild02
+      - moc_pryd02
+      - moc_pryd03
+      - moc_pryd04
+      - moc_pryd05
+    FieldsPopulation: 100
+    Dungeons:
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+    DungeonsPopulation: 100
+
+  - Job: 2  # Mage
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_prison
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 4003  # High Mage
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_prison
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 4010  # High Wizard
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_prison
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 16  # Sage
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_prison
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 4017  # Professor
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - gef_fild00
+      - gef_fild01
+      - gef_fild02
+      - gef_fild03
+      - gef_fild04
+      - gef_fild05
+      - gef_fild06
+      - gef_fild07
+      - gef_fild08
+      - gef_fild09
+      - gef_fild10
+      - gef_fild11
+      - gef_fild12
+      - gef_fild13
+      - gef_fild14
+      - moc_fild01
+      - moc_fild02
+      - moc_fild03
+      - moc_fild07
+      - moc_fild11
+      - moc_fild12
+      - moc_fild13
+      - moc_fild16
+      - moc_fild17
+      - moc_fild18
+      - moc_fild19
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 3  # Archer
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 11  # Hunter
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+      - orcsdun01
+    DungeonsPopulation: 100
+
+  - Job: 4012  # Sniper
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - niflheim
+      - louyang
+    TownsPopulation: 100
+    Fields:
+      - pay_fild01
+      - pay_fild02
+      - pay_fild03
+      - pay_fild04
+      - pay_fild05
+      - pay_fild06
+      - pay_fild07
+      - pay_fild08
+      - pay_fild09
+      - pay_fild10
+      - pay_fild11
+    FieldsPopulation: 100
+    Dungeons:
+      - gef_dun00
+      - gef_dun01
+      - gef_dun02
+      - gl_cas01
+      - gl_cas02
+      - gl_church
+      - gl_chyard
+      - gl_dun01
+      - gl_dun02
+      - gl_prison
+      - gl_prison1
+      - gl_sew01
+      - gl_sew02
+      - gl_sew03
+      - gl_sew04
+      - gl_step
+      - orcsdun01
+    DungeonsPopulation: 100
+  - Job: 5  # Merchant (Vendor in towns)
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - xmas
+      - comodo
+      - yuno
+      - amatsu
+      - gonryun
+      - umbala
+      - louyang
+    TownsPopulation: 50
+
+  - Job: 4006  # High Merchant (Vendor in towns)
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - yuno
+    TownsPopulation: 30
+
+  - Job: 10  # Blacksmith (Vendor in towns)
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - yuno
+    TownsPopulation: 30
+    Fields:
+      - prt_fild01
+      - prt_fild02
+      - prt_fild04
+      - prt_fild05
+      - moc_fild01
+      - moc_fild02
+    FieldsPopulation: 30
+
+  - Job: 4011  # Whitesmith (Vendor in towns)
+    Towns:
+      - prontera
+      - morocc
+      - geffen
+      - payon
+      - alberta
+      - izlude
+      - aldebaran
+      - yuno
+    TownsPopulation: 30
+    Fields:
+      - prt_fild03
+      - prt_fild06
+      - prt_fild07
+      - moc_fild07
+      - moc_fild11
+    FieldsPopulation: 20

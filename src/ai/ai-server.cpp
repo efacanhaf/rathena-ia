@@ -20,6 +20,7 @@
 #include "aichrif.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
+#include "spawner.hpp"
 
 using namespace rathena;
 using namespace rathena::server_core;
@@ -124,13 +125,11 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 	do_init_shell_pool();
 	do_init_names();
 
-	// Phase 1.2 smoke test: prove the pool + name generator work end-to-end.
-	// Removed in Phase 1.5 once the spawner consumes them for real.
-	for (int32 i = 0; i < 3; i++) {
-		uint32 id = shell_pool_alloc();
-		char name[NAME_LENGTH];
-		names_generate(name);
-		ShowInfo("ai-server[selftest]: shell %d -> id=%u name=%s\n", i + 1, id, name);
+	// Phase 1.5c: load population_spawn.yml. No cap — map-server rejects
+	// shells whose target map isn't loaded, so the effective population
+	// matches what this cluster knows about.
+	if (!spawner_load("db/ai/population_spawn.yml", 0)) {
+		ShowWarning("ai-server: spawner not loaded; running with empty population.\n");
 	}
 
 	do_init_aichrif();
