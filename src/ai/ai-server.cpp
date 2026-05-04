@@ -53,8 +53,15 @@ int32 parse_console(const char* buf){
 			names_generate(name);
 			ShowInfo("  shell #%d: id=%u name=%s\n", i + 1, id, name);
 		}
+	} else if (strcmpi(buf, "reload") == 0) {
+		// Phase 3.8: hot reload chat + skill rotations from yaml without
+		// dropping connected shells.
+		bool ok_chat = rathena::server_ai::chat_load("db/ai/population_chat.yml");
+		bool ok_sk   = rathena::server_ai::skill_picker_load("db/ai/population_skill_db.yml");
+		ShowInfo("ai-server: reload chat=%s skill_db=%s\n",
+			ok_chat ? "OK" : "FAIL", ok_sk ? "OK" : "FAIL");
 	} else {
-		ShowInfo("Console commands: status | alive | alloc <N> | shutdown\n");
+		ShowInfo("Console commands: status | alive | alloc <N> | reload | shutdown\n");
 	}
 	return 0;
 }
