@@ -24,6 +24,23 @@ int32 aichrif_send_hello(int32 fd);
 /// Sends a smoke-test ping that should round-trip back as a pong from map-server.
 int32 aichrif_send_ping(int32 fd);
 
+/// Send a shell spawn request to map-server (via char-server). Returns 0 on
+/// success. Phase 1.3 stub: caller passes in fully-formed identity; Phase 1.5
+/// will read identity from population_engine.yml.
+struct ai_shell_init {
+	uint32 shell_id;
+	const char* name;
+	uint16 class_;
+	uint8  sex;
+	uint16 hair;
+	uint16 hair_color;
+	const char* map_name;
+	uint16 x, y;
+	uint8  dir;
+	uint8  behavior_id;
+};
+int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
+
 /// Inter-server packet opcodes (kept here so ai-server doesn't depend on map/).
 constexpr uint16 PACKET_AI_HELLO         = 0x2b30;
 constexpr uint16 PACKET_AI_ACK           = 0x2b31;

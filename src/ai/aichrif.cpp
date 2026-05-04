@@ -3,6 +3,9 @@
 
 #include "aichrif.hpp"
 
+#include <cstring>
+
+#include <common/ai_packets.hpp>
 #include <common/cbasetypes.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
@@ -10,6 +13,8 @@
 #include <common/timer.hpp>
 
 #include "ai-server.hpp"
+#include "names.hpp"
+#include "shell_pool.hpp"
 
 int32 char_fd = -1;
 
@@ -19,6 +24,28 @@ int32 char_fd = -1;
 int32 aichrif_state = 0;
 
 static t_tick aichrif_last_attempt = 0;
+
+int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init){
+	PACKET_AI_SHELL_SPAWN_S p{};
+	p.cmd = PACKET_AI_SHELL_SPAWN;
+	p.len = sizeof(p);
+	p.shell_id = init.shell_id;
+	safestrncpy(p.name, init.name, NAME_LENGTH);
+	p.class_ = init.class_;
+	p.sex = init.sex;
+	p.hair = init.hair;
+	p.hair_color = init.hair_color;
+	p.cloth_color = 0;
+	safestrncpy(p.map_name, init.map_name, MAP_NAME_LENGTH_EXT);
+	p.x = init.x;
+	p.y = init.y;
+	p.dir = init.dir;
+	p.behavior_id = init.behavior_id;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
 
 int32 aichrif_send_ping(int32 fd){
 	static uint32 token = 0;
@@ -56,6 +83,37 @@ static int32 aichrif_parse_connectack(int32 fd){
 	}
 	aichrif_state = 2;
 	ShowStatus("ai-server: handshake OK with char-server (fd=%d).\n", fd);
+
+	// Phase 1.3 smoke test: send one real SHELL_SPAWN packet so map-server can
+	// validate the wire format. Replaced by spawner.cpp in Phase 1.5.
+	uint32 sid = shell_pool_alloc();
+	if (sid != 0) {
+		char nm[NAME_LENGTH];
+		names_generate(nm);
+		ai_shell_init init{};
+		init.shell_id = sid;
+		init.name = nm;
+		init.class_ = 0;        // JOB_NOVICE
+		init.sex = 1;
+		init.hair = 1;
+		init.hair_color = 1;
+		init.map_name = "prontera";
+		init.x = 156;
+		init.y = 180;
+		init.dir = 4;
+		init.behavior_id = 0;   // wander
+		aichrif_send_shell_spawn(fd, init);
+		ShowStatus("ai-server: requested first spawn id=%u name=%s @ prontera.\n", sid, nm);
+	}
+	return 1;
+}
+
+/// 0x2b50 SHELL_SPAWNED ack from map-server.
+static int32 aichrif_parse_shell_spawned(int32 fd){
+	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_SPAWNED_S)) return 0;
+	const PACKET_AI_SHELL_SPAWNED_S* p = (const PACKET_AI_SHELL_SPAWNED_S*)RFIFOP(fd, 0);
+	ShowInfo("ai-server: shell %u spawn ack ok=%u err=%u.\n", p->shell_id, p->ok, p->err);
+	RFIFOSKIP(fd, p->len);
 	return 1;
 }
 
@@ -87,6 +145,10 @@ int32 aichrif_parse(int32 fd){
 				break;
 			case PACKET_AI_PONG:
 				if (!aichrif_parse_pong(fd))
+					return 0;
+				break;
+			case PACKET_AI_SHELL_SPAWNED:
+				if (!aichrif_parse_shell_spawned(fd))
 					return 0;
 				break;
 			default:

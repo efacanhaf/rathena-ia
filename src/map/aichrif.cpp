@@ -3,11 +3,16 @@
 
 #include "aichrif.hpp"
 
+#include <cstring>
+
+#include <common/ai_packets.hpp>
 #include <common/cbasetypes.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
 
 #include "chrif.hpp"
+
+extern int32 char_fd; ///< inter-server fd to char-server (defined in chrif.cpp)
 
 /// Reply to ai-server with PACKET_AI_PONG. Length-prefixed (8 bytes).
 static void aichrif_send_pong(int32 fd, uint32 token){
@@ -26,10 +31,30 @@ static int32 aichrif_handle_ping(int32 fd){
 	return 1;
 }
 
-/// Phase 1.1 placeholder: log + ack. Real spawn comes in Phase 1.2.
+/// Send a SHELL_SPAWNED ack back to ai-server (via char-server forwarder).
+static void aichrif_send_spawned_ack(uint32 shell_id, bool ok, uint8 err){
+	if (char_fd < 0 || session[char_fd] == nullptr)
+		return;
+	PACKET_AI_SHELL_SPAWNED_S p{};
+	p.cmd = PACKET_AI_SHELL_SPAWNED;
+	p.len = sizeof(p);
+	p.shell_id = shell_id;
+	p.ok = ok ? 1 : 0;
+	p.err = err;
+	WFIFOHEAD(char_fd, sizeof(p));
+	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
+	WFIFOSET(char_fd, sizeof(p));
+}
+
+/// Phase 1.3: parse the wire format and ack. Phase 1.4 will allocate the
+/// map_session_data and call clif_spawn / unit_walktoxy.
 static int32 aichrif_handle_spawn(int32 fd){
-	uint32 shell_id = RFIFOL(fd, 4);
-	ShowInfo("ai-server: SHELL_SPAWN received (shell_id=%u). [stub]\n", shell_id);
+	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_SPAWN_S))
+		return 0;
+	const PACKET_AI_SHELL_SPAWN_S* p = (const PACKET_AI_SHELL_SPAWN_S*)RFIFOP(fd, 0);
+	ShowInfo("ai-server: SHELL_SPAWN id=%u name='%s' class=%u @ %s(%u,%u) dir=%u behavior=%u [stub: would create map_session_data]\n",
+		p->shell_id, p->name, p->class_, p->map_name, p->x, p->y, p->dir, p->behavior_id);
+	aichrif_send_spawned_ack(p->shell_id, true, 0);
 	return 1;
 }
 
