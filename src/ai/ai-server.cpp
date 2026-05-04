@@ -20,6 +20,7 @@
 #include "aichrif.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
+#include "skill_picker.hpp"
 #include "spawner.hpp"
 
 using namespace rathena;
@@ -130,6 +131,11 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 	// matches what this cluster knows about.
 	if (!spawner_load("db/ai/population_spawn.yml", 0)) {
 		ShowWarning("ai-server: spawner not loaded; running with empty population.\n");
+	}
+
+	// Phase 2.4: per-job skill rotations + condition gates.
+	if (!rathena::server_ai::skill_picker_load("db/ai/population_skill_db.yml")) {
+		ShowWarning("ai-server: skill_picker not loaded; shells will only auto-attack.\n");
 	}
 
 	do_init_aichrif();

@@ -1,0 +1,167 @@
+// Copyright (c) rAthena Dev Teams - Licensed under GNU GPL
+// For more information, see LICENCE in the main folder
+
+#include "skill_picker.hpp"
+
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <unordered_map>
+
+#include <ryml.hpp>
+
+#include <common/malloc.hpp>
+#include <common/showmsg.hpp>
+
+namespace rathena::server_ai {
+
+namespace {
+
+std::unordered_map<uint16, skill_rotation> g_rotations;
+
+const std::unordered_map<std::string, skill_cond> g_cond_table = {
+	{ "always",               skill_cond::ALWAYS },
+	{ "hp_below",             skill_cond::HP_BELOW },
+	{ "sp_below",             skill_cond::SP_BELOW },
+	{ "hp_above",             skill_cond::HP_ABOVE },
+	{ "enemy_hp_below",       skill_cond::ENEMY_HP_BELOW },
+	{ "enemy_hp_above",       skill_cond::ENEMY_HP_ABOVE },
+	{ "enemy_status",         skill_cond::ENEMY_STATUS },
+	{ "not_enemy_status",     skill_cond::NOT_ENEMY_STATUS },
+	{ "self_status",          skill_cond::SELF_STATUS },
+	{ "not_self_status",      skill_cond::NOT_SELF_STATUS },
+	{ "distance_below",       skill_cond::DISTANCE_BELOW },
+	{ "distance_above",       skill_cond::DISTANCE_ABOVE },
+	{ "enemy_count_nearby",   skill_cond::ENEMY_COUNT_NEARBY },
+	{ "map_zone",             skill_cond::MAP_ZONE },
+	{ "melee_attacked",       skill_cond::MELEE_ATTACKED },
+	{ "range_attacked",       skill_cond::RANGE_ATTACKED },
+	{ "ally_hp_below",        skill_cond::ALLY_HP_BELOW },
+	{ "ally_status",          skill_cond::ALLY_STATUS },
+	{ "not_ally_status",      skill_cond::NOT_ALLY_STATUS },
+	{ "has_sphere",           skill_cond::HAS_SPHERE },
+	{ "enemy_hidden",         skill_cond::ENEMY_HIDDEN },
+	{ "enemy_casting",        skill_cond::ENEMY_CASTING },
+	{ "enemy_casting_ground", skill_cond::ENEMY_CASTING_GROUND },
+	{ "cell_has_skill_unit",  skill_cond::CELL_HAS_SKILL_UNIT },
+	{ "self_targeted",        skill_cond::SELF_TARGETED },
+	{ "enemy_element",        skill_cond::ENEMY_ELEMENT },
+	{ "enemy_race",           skill_cond::ENEMY_RACE },
+	{ "ally_count_nearby",    skill_cond::ALLY_COUNT_NEARBY },
+	{ "enemy_is_boss",        skill_cond::ENEMY_IS_BOSS },
+	{ "sp_above",             skill_cond::SP_ABOVE },
+};
+
+std::string read_str(const ryml::NodeRef& node, const char* key,
+		const std::string& def = ""){
+	auto child = node.find_child(c4::to_csubstr(key));
+	if (child.valid() == false || !child.has_val()) return def;
+	auto sv = child.val();
+	return std::string(sv.str, sv.len);
+}
+
+int32 read_int(const ryml::NodeRef& node, const char* key, int32 def){
+	auto child = node.find_child(c4::to_csubstr(key));
+	if (child.valid() == false || !child.has_val()) return def;
+	int32 v = def;
+	child >> v;
+	return v;
+}
+
+bool starts_with_digit(const std::string& s){
+	return !s.empty() && (s[0] >= '0' && s[0] <= '9');
+}
+
+}
+
+skill_cond skill_picker_parse_cond(const std::string& s){
+	if (s.empty()) return skill_cond::ALWAYS;
+	auto it = g_cond_table.find(s);
+	if (it == g_cond_table.end()) {
+		ShowWarning("skill_picker: unknown condition '%s'.\n", s.c_str());
+		return skill_cond::ALWAYS;
+	}
+	return it->second;
+}
+
+bool skill_picker_load(const char* yaml_path){
+	g_rotations.clear();
+
+	FILE* f = fopen(yaml_path, "rb");
+	if (!f) {
+		ShowError("skill_picker: cannot open %s\n", yaml_path);
+		return false;
+	}
+	fseek(f, 0, SEEK_END);
+	size_t size = ftell(f);
+	rewind(f);
+	char* buf = (char*)aMalloc(size + 1);
+	size_t got = fread(buf, 1, size, f);
+	buf[got] = '\0';
+	fclose(f);
+
+	ryml::Tree tree;
+	try {
+		tree = ryml::parse_in_arena(c4::to_csubstr(yaml_path), c4::to_csubstr(buf));
+	} catch (const std::runtime_error& e) {
+		ShowError("skill_picker: parse failed for %s: %s\n", yaml_path, e.what());
+		aFree(buf);
+		return false;
+	}
+
+	auto root = tree.rootref();
+	auto body = root.find_child(c4::to_csubstr("Body"));
+	if (body.valid() == false) {
+		ShowError("skill_picker: %s missing Body.\n", yaml_path);
+		aFree(buf);
+		return false;
+	}
+
+	int32 jobs = 0, total_skills = 0;
+	for (const auto& job_node : body) {
+		uint16 job = (uint16)read_int(job_node, "JobId", 0);
+		auto skills_node = job_node.find_child(c4::to_csubstr("Skills"));
+		if (skills_node.valid() == false) continue;
+
+		skill_rotation rot;
+		rot.job = job;
+		for (const auto& sk : skills_node) {
+			skill_entry e;
+			e.skill_name = read_str(sk, "SkillId");
+			if (starts_with_digit(e.skill_name)) {
+				e.skill_id = (uint16)std::atoi(e.skill_name.c_str());
+			}
+			e.level = (uint8)read_int(sk, "Level", 1);
+			e.rate  = (uint16)read_int(sk, "Rate", 10000);
+			e.state  = (skill_state)read_int(sk, "State", 0);
+			e.target = (skill_target)read_int(sk, "Target", 0);
+
+			std::string cond = read_str(sk, "Condition", "");
+			e.condition = skill_picker_parse_cond(cond);
+
+			std::string cv = read_str(sk, "CondValue", "");
+			if (!cv.empty()) {
+				if (starts_with_digit(cv) || cv[0] == '-') {
+					e.cond_value_num = std::atoi(cv.c_str());
+				} else {
+					e.cond_value_str = cv;
+				}
+			}
+			rot.skills.push_back(std::move(e));
+			total_skills++;
+		}
+		g_rotations[job] = std::move(rot);
+		jobs++;
+	}
+	aFree(buf);
+
+	ShowStatus("skill_picker: loaded %d job rotations, %d skill entries.\n", jobs, total_skills);
+	return true;
+}
+
+const skill_rotation* skill_picker_get(uint16 job){
+	auto it = g_rotations.find(job);
+	return it == g_rotations.end() ? nullptr : &it->second;
+}
+
+}
