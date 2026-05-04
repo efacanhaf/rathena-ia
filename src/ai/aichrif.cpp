@@ -27,6 +27,7 @@ namespace {
 struct shell_state {
 	uint32 shell_id;
 	uint16 job;            // for skill rotation lookup
+	spawn_category cat;    // map category drives behavior
 	uint16 base_x, base_y; // anchor point; wander stays within ±radius
 	// Last REPORT snapshot (Phase 2.2). Zeroed until first packet arrives.
 	uint16 cur_x, cur_y;
@@ -54,9 +55,10 @@ uint16 g_spawn_within = 0;
 int32  g_spawn_pending = 0;
 int32  g_spawn_emitted = 0;
 constexpr int32 SPAWN_BATCH_PER_TICK = 2;
-// Phase 2.9 smoke test: 20 shells in pay_dun01 (skeleton/eggyra/drainliar
-// dungeon). This is the closing milestone for Phase 2 in the plan.
-constexpr int32 SPAWN_HARD_CAP = 20;
+// Phase 3.1: lift the cap to 50 and let the spawner pick maps from the
+// yaml (Towns/Fields/Dungeons). Map-server silently drops shells that
+// land on non-walkable cells; that's fine for Phase 3 smoke traffic.
+constexpr int32 SPAWN_HARD_CAP = 50;
 }
 
 /// 0 = not connected
@@ -365,9 +367,10 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		}
 		char nm[NAME_LENGTH];
 		names_generate(nm);
-		// Phase 2.9 smoke test: spread around the pay_dun01 entry area.
-		uint16 bx = (uint16)(170 + (rnd() % 30));    // 170..199
-		uint16 by = (uint16)(160 + (rnd() % 30));    // 160..189
+		// Phase 3.1: random cell across the map. Map-server rejects shells
+		// that land on walls/edges; the spawner just moves on.
+		uint16 bx = (uint16)(40 + (rnd() % 280));   // 40..319
+		uint16 by = (uint16)(40 + (rnd() % 280));   // 40..319
 		ai_shell_init init{};
 		init.shell_id = sid;
 		init.name = nm;
@@ -375,8 +378,8 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		init.sex = (uint8)(rnd() % 2);
 		init.hair = (uint16)(1 + rnd() % 20);
 		init.hair_color = (uint16)(rnd() % 8);
-		// Phase 2.9 smoke test: force pay_dun01.
-		init.map_name = "pay_dun01";
+		// Phase 3.1: use the target map from the yaml.
+		init.map_name = t.map_name.c_str();
 		init.x = bx;
 		init.y = by;
 		init.dir = (uint8)(rnd() % 8);
@@ -385,6 +388,7 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		shell_state st{};
 		st.shell_id = sid;
 		st.job = t.job;
+		st.cat = t.category;
 		st.base_x = bx;
 		st.base_y = by;
 		g_shell_idx[sid] = g_shells_local.size();
@@ -432,6 +436,9 @@ static TIMER_FUNC(aichrif_combat_timer){
 		if (s.last_report_tick == 0) continue;
 		if (DIFF_TICK(now, s.last_report_tick) > 3000) continue;
 		if (s.hp == 0) continue;
+		// Town shells don't engage — they're meant to look like idle traffic
+		// (chat, sit, vending in Phase 3). Field/dungeon always hunt.
+		if (s.cat == spawn_category::TOWN) continue;
 		// Fleeing: skip engagement until the timer expires; the WALK_TO that
 		// kicked off the flee is already in flight from aichrif_parse_event.
 		if (s.fleeing_until && DIFF_TICK(now, s.fleeing_until) < 0) continue;

@@ -96,10 +96,12 @@ bool spawner_load(const char* yaml_path, int32 cap_total){
 		read_string_list(job_node, "Fields", fields);
 		read_string_list(job_node, "Dungeons", dungeons);
 
-		// Phase 1.5c: only towns are loaded for the first rollout. Fields
-		// and dungeons get enabled once we have walkable-cell sampling.
-		distribute(job, towns, read_int(job_node, "TownsPopulation", 0), spawn_category::TOWN);
-		(void)fields; (void)dungeons;
+		// Phase 3: enable all three categories. Fields/Dungeons land in a
+		// random cell within the map; shells whose pos hits a wall just
+		// fail aishell_create and the spawn is dropped silently.
+		distribute(job, towns,    read_int(job_node, "TownsPopulation",    0), spawn_category::TOWN);
+		distribute(job, fields,   read_int(job_node, "FieldsPopulation",   0), spawn_category::FIELD);
+		distribute(job, dungeons, read_int(job_node, "DungeonsPopulation", 0), spawn_category::DUNGEON);
 		jobs_seen++;
 	}
 	aFree(buf);
