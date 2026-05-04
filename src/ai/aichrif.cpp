@@ -20,9 +20,20 @@ int32 aichrif_state = 0;
 
 static t_tick aichrif_last_attempt = 0;
 
+int32 aichrif_send_ping(int32 fd){
+	static uint32 token = 0;
+	token++;
+	WFIFOHEAD(fd, 8);
+	WFIFOW(fd, 0) = PACKET_AI_PING;
+	WFIFOW(fd, 2) = 8;
+	WFIFOL(fd, 4) = token;
+	WFIFOSET(fd, 8);
+	return 0;
+}
+
 int32 aichrif_send_hello(int32 fd){
 	WFIFOHEAD(fd, 60);
-	WFIFOW(fd, 0) = 0x2b30;
+	WFIFOW(fd, 0) = PACKET_AI_HELLO;
 	memcpy(WFIFOP(fd, 2), ai_config.ai_userid, NAME_LENGTH);
 	memcpy(WFIFOP(fd, 26), ai_config.ai_passwd, NAME_LENGTH);
 	WFIFOL(fd, 50) = 0;
@@ -48,6 +59,17 @@ static int32 aichrif_parse_connectack(int32 fd){
 	return 1;
 }
 
+/// 0x2b53 PONG { len:W=8, token:L }
+static int32 aichrif_parse_pong(int32 fd){
+	if (RFIFOREST(fd) < 4) return 0;
+	int32 plen = RFIFOW(fd, 2);
+	if (plen < 8 || RFIFOREST(fd) < (size_t)plen) return 0;
+	uint32 token = RFIFOL(fd, 4);
+	ShowInfo("ai-server: pong from map-server (token=%u). Routing OK.\n", token);
+	RFIFOSKIP(fd, plen);
+	return 1;
+}
+
 int32 aichrif_parse(int32 fd){
 	if (session[fd]->flag.eof) {
 		do_close(fd);
@@ -59,8 +81,12 @@ int32 aichrif_parse(int32 fd){
 	while (RFIFOREST(fd) >= 2) {
 		uint16 cmd = RFIFOW(fd, 0);
 		switch (cmd) {
-			case 0x2b31:
+			case PACKET_AI_ACK:
 				if (!aichrif_parse_connectack(fd))
+					return 0;
+				break;
+			case PACKET_AI_PONG:
+				if (!aichrif_parse_pong(fd))
 					return 0;
 				break;
 			default:
@@ -109,6 +135,12 @@ static TIMER_FUNC(aichrif_check_connect_timer){
 	return 0;
 }
 
+static TIMER_FUNC(aichrif_ping_timer){
+	if (aichrif_state == 2 && char_fd >= 0)
+		aichrif_send_ping(char_fd);
+	return 0;
+}
+
 void do_init_aichrif(void){
 	char_fd = -1;
 	aichrif_state = 0;
@@ -119,6 +151,9 @@ void do_init_aichrif(void){
 	aichrif_check_connect();
 	add_timer_func_list(aichrif_check_connect_timer, "aichrif_check_connect");
 	add_timer_interval(gettick() + 10 * 1000, aichrif_check_connect_timer, 0, 0, 10 * 1000);
+	// Smoke-test ping; will be replaced by real shell-spawn traffic in Phase 1.2.
+	add_timer_func_list(aichrif_ping_timer, "aichrif_ping");
+	add_timer_interval(gettick() + 3 * 1000, aichrif_ping_timer, 0, 0, 5 * 1000);
 }
 
 void do_final_aichrif(void){

@@ -203,6 +203,7 @@
     <ClInclude Include="battleground.hpp" />
     <ClInclude Include="buyingstore.hpp" />
     <ClInclude Include="cashshop.hpp" />
+    <ClInclude Include="aichrif.hpp" />
     <ClInclude Include="channel.hpp" />
     <ClInclude Include="chat.hpp" />
     <ClInclude Include="chrif.hpp" />
@@ -1498,6 +1499,7 @@
     <ClCompile Include="battle.cpp" />
     <ClCompile Include="battleground.cpp" />
     <ClCompile Include="buyingstore.cpp" />
+    <ClCompile Include="aichrif.cpp" />
     <ClCompile Include="cashshop.cpp" />
     <ClCompile Include="channel.cpp" />
     <ClCompile Include="chat.cpp" />

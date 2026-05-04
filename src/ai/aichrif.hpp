@@ -21,4 +21,19 @@ int32 aichrif_parse(int32 fd);
 /// Sends the AI peer handshake (0x2b30) once the TCP connection is up.
 int32 aichrif_send_hello(int32 fd);
 
+/// Sends a smoke-test ping that should round-trip back as a pong from map-server.
+int32 aichrif_send_ping(int32 fd);
+
+/// Inter-server packet opcodes (kept here so ai-server doesn't depend on map/).
+constexpr uint16 PACKET_AI_HELLO         = 0x2b30;
+constexpr uint16 PACKET_AI_ACK           = 0x2b31;
+constexpr uint16 PACKET_AI_SHELL_SPAWN   = 0x2b40;
+constexpr uint16 PACKET_AI_SHELL_DESPAWN = 0x2b41;
+constexpr uint16 PACKET_AI_SHELL_CMD     = 0x2b42;
+constexpr uint16 PACKET_AI_PING          = 0x2b43;
+constexpr uint16 PACKET_AI_SHELL_SPAWNED = 0x2b50;
+constexpr uint16 PACKET_AI_SHELL_REPORT  = 0x2b51;
+constexpr uint16 PACKET_AI_SHELL_EVENT   = 0x2b52;
+constexpr uint16 PACKET_AI_PONG          = 0x2b53;
+
 #endif /* AI_CHRIF_HPP */
