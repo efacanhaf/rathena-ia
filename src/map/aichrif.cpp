@@ -152,6 +152,8 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->base_status.speed = DEFAULT_WALK_SPEED;
 	sd->battle_status.size = SZ_SMALL;
 	sd->battle_status.race = RC_PLAYER_HUMAN;
+	sd->base_status.mode = MD_CANMOVE;
+	sd->battle_status.mode = MD_CANMOVE;
 
 	// Vars allocator (used by anti-bot, scripts; safe to alloc empty).
 	sd->regs.vars = i64db_alloc(DB_OPT_BASE);
@@ -211,8 +213,27 @@ static int32 aichrif_handle_despawn(int32 fd){
 }
 
 static int32 aichrif_handle_cmd(int32 fd){
-	uint32 shell_id = RFIFOL(fd, 4);
-	ShowInfo("ai-server: SHELL_CMD received (shell_id=%u). [stub]\n", shell_id);
+	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_CMD_HEADER))
+		return 0;
+	const PACKET_AI_SHELL_CMD_HEADER* hdr = (const PACKET_AI_SHELL_CMD_HEADER*)RFIFOP(fd, 0);
+	map_session_data* sd = aishell_find(hdr->shell_id);
+	if (sd == nullptr) {
+		ShowWarning("ai-server: SHELL_CMD for unknown shell %u (op=%u).\n", hdr->shell_id, hdr->op);
+		return 1;
+	}
+	switch (hdr->op) {
+		case AI_CMD_WALK_TO: {
+			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_WALK_TO_S)) return 0;
+			const PACKET_AI_CMD_WALK_TO_S* w = (const PACKET_AI_CMD_WALK_TO_S*)RFIFOP(fd, 0);
+			// flag=2 bypasses status_bl_has_mode(MD_CANMOVE) + unit_can_move(),
+			// neither of which is initialised on a shell sd (no status_calc_pc).
+			unit_walktoxy(sd, w->x, w->y, 2);
+			break;
+		}
+		default:
+			ShowWarning("ai-server: SHELL_CMD unknown op=%u (shell %u).\n", hdr->op, hdr->shell_id);
+			break;
+	}
 	return 1;
 }
 

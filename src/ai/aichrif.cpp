@@ -4,8 +4,10 @@
 #include "aichrif.hpp"
 
 #include <cstring>
+#include <vector>
 
 #include <common/ai_packets.hpp>
+#include <common/random.hpp>
 #include <common/cbasetypes.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
@@ -18,12 +20,35 @@
 
 int32 char_fd = -1;
 
+namespace {
+struct shell_state {
+	uint32 shell_id;
+	uint16 base_x, base_y; // anchor point; wander stays within ±radius
+};
+std::vector<shell_state> g_shells_local;
+constexpr uint16 WANDER_RADIUS = 6;
+}
+
 /// 0 = not connected
 /// 1 = TCP up, 0x2b30 sent, awaiting 0x2b31
 /// 2 = handshake OK
 int32 aichrif_state = 0;
 
 static t_tick aichrif_last_attempt = 0;
+
+int32 aichrif_send_walk_to(int32 fd, uint32 shell_id, uint16 x, uint16 y){
+	PACKET_AI_CMD_WALK_TO_S p{};
+	p.hdr.cmd = PACKET_AI_SHELL_CMD;
+	p.hdr.len = sizeof(p);
+	p.hdr.shell_id = shell_id;
+	p.hdr.op = AI_CMD_WALK_TO;
+	p.x = x;
+	p.y = y;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
 
 int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init){
 	PACKET_AI_SHELL_SPAWN_S p{};
@@ -84,8 +109,8 @@ static int32 aichrif_parse_connectack(int32 fd){
 	aichrif_state = 2;
 	ShowStatus("ai-server: handshake OK with char-server (fd=%d).\n", fd);
 
-	// Phase 1.3 smoke test: send one real SHELL_SPAWN packet so map-server can
-	// validate the wire format. Replaced by spawner.cpp in Phase 1.5.
+	// Phase 1.5a smoke test: spawn a single wandering shell. Phase 1.5b will
+	// replace this with the population_spawn.yml loop.
 	uint32 sid = shell_pool_alloc();
 	if (sid != 0) {
 		char nm[NAME_LENGTH];
@@ -103,6 +128,7 @@ static int32 aichrif_parse_connectack(int32 fd){
 		init.dir = 4;
 		init.behavior_id = 0;   // wander
 		aichrif_send_shell_spawn(fd, init);
+		g_shells_local.push_back({sid, 156, 180});
 		ShowStatus("ai-server: requested first spawn id=%u name=%s @ prontera.\n", sid, nm);
 	}
 	return 1;
@@ -203,6 +229,18 @@ static TIMER_FUNC(aichrif_ping_timer){
 	return 0;
 }
 
+static TIMER_FUNC(aichrif_wander_timer){
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	for (auto& s : g_shells_local) {
+		int16 dx = (rnd() % (WANDER_RADIUS * 2 + 1)) - WANDER_RADIUS;
+		int16 dy = (rnd() % (WANDER_RADIUS * 2 + 1)) - WANDER_RADIUS;
+		uint16 tx = (uint16)std::max<int16>(1, (int16)s.base_x + dx);
+		uint16 ty = (uint16)std::max<int16>(1, (int16)s.base_y + dy);
+		aichrif_send_walk_to(char_fd, s.shell_id, tx, ty);
+	}
+	return 0;
+}
+
 void do_init_aichrif(void){
 	char_fd = -1;
 	aichrif_state = 0;
@@ -216,6 +254,9 @@ void do_init_aichrif(void){
 	// Smoke-test ping; will be replaced by real shell-spawn traffic in Phase 1.2.
 	add_timer_func_list(aichrif_ping_timer, "aichrif_ping");
 	add_timer_interval(gettick() + 3 * 1000, aichrif_ping_timer, 0, 0, 5 * 1000);
+	// Wander loop: every 5s, each tracked shell picks a new destination.
+	add_timer_func_list(aichrif_wander_timer, "aichrif_wander");
+	add_timer_interval(gettick() + 5 * 1000, aichrif_wander_timer, 0, 0, 5 * 1000);
 }
 
 void do_final_aichrif(void){
