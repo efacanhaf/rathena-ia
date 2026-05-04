@@ -89,6 +89,33 @@ struct PACKET_AI_SHELL_SPAWNED_S {
 	uint8  err;
 };
 
+/// One row in PACKET_AI_SHELL_REPORT.enemies[]. mob_class kept for
+/// behavior-side mob_db lookups; distance pre-computed on map side.
+struct PACKET_AI_NEARBY_ENEMY {
+	uint32 id;          // block_list id
+	uint16 mob_class;   // mob_db id; 0 if not BL_MOB
+	uint16 hp_pct;      // 0..100
+	uint16 x, y;
+	uint8  distance;    // chebyshev cells
+};
+
+constexpr uint8 AI_REPORT_MAX_ENEMIES = 8;
+
+/// PACKET_AI_SHELL_REPORT (0x2b51) — periodic map → ai snapshot.
+/// Fixed-size to keep parsing trivial; padded with zeroed enemies if fewer.
+struct PACKET_AI_SHELL_REPORT_S {
+	uint16 cmd;
+	uint16 len;
+	uint32 shell_id;
+	uint16 x, y;
+	uint32 hp, max_hp;
+	uint32 sp, max_sp;
+	uint32 target_id;   // 0 = no target
+	uint8  enemy_count; // 0..AI_REPORT_MAX_ENEMIES
+	uint8  pad[3];
+	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
+};
+
 #pragma pack(pop)
 
 #endif /* COMMON_AI_PACKETS_HPP */

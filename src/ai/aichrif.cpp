@@ -4,6 +4,7 @@
 #include "aichrif.hpp"
 
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 #include <common/ai_packets.hpp>
@@ -25,8 +26,17 @@ namespace {
 struct shell_state {
 	uint32 shell_id;
 	uint16 base_x, base_y; // anchor point; wander stays within ±radius
+	// Last REPORT snapshot (Phase 2.2). Zeroed until first packet arrives.
+	uint16 cur_x, cur_y;
+	uint32 hp, max_hp;
+	uint32 sp, max_sp;
+	uint32 target_id;
+	uint8  enemy_count;
+	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
+	t_tick last_report_tick;
 };
 std::vector<shell_state> g_shells_local;
+std::unordered_map<uint32, size_t> g_shell_idx; // shell_id -> g_shells_local index
 constexpr uint16 WANDER_RADIUS = 6;
 
 // Spawn-emission cursor: walks through spawner_targets() in chunks so the
@@ -137,6 +147,26 @@ static int32 aichrif_parse_shell_spawned(int32 fd){
 	return 1;
 }
 
+/// 0x2b51 REPORT { ... } — periodic shell snapshot from map-server.
+static int32 aichrif_parse_report(int32 fd){
+	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_REPORT_S)) return 0;
+	const PACKET_AI_SHELL_REPORT_S* p = (const PACKET_AI_SHELL_REPORT_S*)RFIFOP(fd, 0);
+	auto it = g_shell_idx.find(p->shell_id);
+	if (it != g_shell_idx.end() && it->second < g_shells_local.size()) {
+		shell_state& s = g_shells_local[it->second];
+		s.cur_x = p->x; s.cur_y = p->y;
+		s.hp = p->hp; s.max_hp = p->max_hp;
+		s.sp = p->sp; s.max_sp = p->max_sp;
+		s.target_id = p->target_id;
+		s.enemy_count = (p->enemy_count > AI_REPORT_MAX_ENEMIES) ? AI_REPORT_MAX_ENEMIES : p->enemy_count;
+		for (uint8 i = 0; i < s.enemy_count; i++)
+			s.enemies[i] = p->enemies[i];
+		s.last_report_tick = gettick();
+	}
+	RFIFOSKIP(fd, p->len);
+	return 1;
+}
+
 /// 0x2b53 PONG { len:W=8, token:L }
 static int32 aichrif_parse_pong(int32 fd){
 	if (RFIFOREST(fd) < 4) return 0;
@@ -169,6 +199,10 @@ int32 aichrif_parse(int32 fd){
 				break;
 			case PACKET_AI_SHELL_SPAWNED:
 				if (!aichrif_parse_shell_spawned(fd))
+					return 0;
+				break;
+			case PACKET_AI_SHELL_REPORT:
+				if (!aichrif_parse_report(fd))
 					return 0;
 				break;
 			default:
@@ -261,7 +295,12 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		init.dir = (uint8)(rnd() % 8);
 		init.behavior_id = 0;
 		aichrif_send_shell_spawn(char_fd, init);
-		g_shells_local.push_back({sid, bx, by});
+		shell_state st{};
+		st.shell_id = sid;
+		st.base_x = bx;
+		st.base_y = by;
+		g_shell_idx[sid] = g_shells_local.size();
+		g_shells_local.push_back(st);
 		g_spawn_within++;
 		g_spawn_pending--;
 		g_spawn_emitted++;

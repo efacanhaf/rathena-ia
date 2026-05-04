@@ -3,6 +3,9 @@
 
 #include "aichrif.hpp"
 
+#include <algorithm>
+#include <cstdarg>
+#include <cstdlib>
 #include <cstring>
 #include <unordered_map>
 #include <vector>
@@ -22,6 +25,7 @@
 #include <common/mapindex.hpp>
 
 #include "map.hpp"
+#include "mob.hpp"
 #include "pc.hpp"
 #include "status.hpp"
 #include "unit.hpp"
@@ -195,6 +199,99 @@ void aishell_destroy(uint32 shell_id){
 	aFree(sd);
 }
 
+// ---------------------------------------------------------------------------
+// REPORT timer: streams shell snapshot + nearby_enemies back to ai-server.
+// ---------------------------------------------------------------------------
+
+constexpr int16 AI_REPORT_RANGE = 12;   // cells; matches AREA_SIZE-ish vision
+constexpr int32 AI_REPORT_PERIOD_MS = 1000;
+
+namespace {
+struct enemy_scan_ctx {
+	const map_session_data* center;
+	uint8 count;
+	PACKET_AI_NEARBY_ENEMY rows[AI_REPORT_MAX_ENEMIES];
+};
+}
+
+/// va_list callback for map_foreachinrange. Picks BL_MOB only; insertion-sort
+/// by chebyshev distance into a fixed-size top-N table.
+static int32 ai_report_collect_mob(block_list* bl, va_list ap){
+	enemy_scan_ctx* ctx = va_arg(ap, enemy_scan_ctx*);
+	if (bl->type != BL_MOB) return 0;
+	mob_data* md = (mob_data*)bl;
+	if (status_isdead(*bl)) return 0;
+
+	int16 dx = bl->x - ctx->center->x;
+	int16 dy = bl->y - ctx->center->y;
+	int16 ad = (int16)std::max(std::abs(dx), std::abs(dy));
+	uint8 dist = (ad < 0 ? 0 : (ad > 255 ? 255 : (uint8)ad));
+
+	uint16 hp_pct = 0;
+	if (md->status.max_hp > 0) {
+		uint64 v = (uint64)md->status.hp * 100 / md->status.max_hp;
+		hp_pct = (uint16)(v > 100 ? 100 : v);
+	}
+
+	PACKET_AI_NEARBY_ENEMY row{};
+	row.id = bl->id;
+	row.mob_class = (uint16)md->mob_id;
+	row.hp_pct = hp_pct;
+	row.x = (uint16)bl->x;
+	row.y = (uint16)bl->y;
+	row.distance = dist;
+
+	// insert keeping ascending distance order; cap at AI_REPORT_MAX_ENEMIES.
+	uint8 i = ctx->count;
+	while (i > 0 && ctx->rows[i - 1].distance > dist) {
+		if (i < AI_REPORT_MAX_ENEMIES)
+			ctx->rows[i] = ctx->rows[i - 1];
+		i--;
+	}
+	if (i < AI_REPORT_MAX_ENEMIES)
+		ctx->rows[i] = row;
+	if (ctx->count < AI_REPORT_MAX_ENEMIES)
+		ctx->count++;
+	return 1;
+}
+
+static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
+	if (char_fd < 0 || session[char_fd] == nullptr) return;
+
+	enemy_scan_ctx ctx{};
+	ctx.center = sd;
+	map_foreachinrange(ai_report_collect_mob, sd, AI_REPORT_RANGE, BL_MOB, &ctx);
+
+	PACKET_AI_SHELL_REPORT_S p{};
+	p.cmd = PACKET_AI_SHELL_REPORT;
+	p.len = sizeof(p);
+	p.shell_id = shell_id;
+	p.x = (uint16)sd->x;
+	p.y = (uint16)sd->y;
+	p.hp = (uint32)sd->battle_status.hp;
+	p.max_hp = (uint32)sd->battle_status.max_hp;
+	p.sp = (uint32)sd->battle_status.sp;
+	p.max_sp = (uint32)sd->battle_status.max_sp;
+	p.target_id = (uint32)sd->ud.target;
+	p.enemy_count = ctx.count;
+	for (uint8 i = 0; i < ctx.count; i++)
+		p.enemies[i] = ctx.rows[i];
+
+	WFIFOHEAD(char_fd, sizeof(p));
+	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
+	WFIFOSET(char_fd, sizeof(p));
+}
+
+static TIMER_FUNC(aichrif_report_timer){
+	if (char_fd < 0 || session[char_fd] == nullptr) return 0;
+	for (auto& kv : g_shells) {
+		map_session_data* sd = kv.second;
+		if (sd == nullptr) continue;
+		aichrif_send_report(kv.first, sd);
+	}
+	return 0;
+}
+
 /// Phase 1.4: actually create the shell.
 static int32 aichrif_handle_spawn(int32 fd){
 	if (RFIFOREST(fd) < sizeof(PACKET_AI_SHELL_SPAWN_S))
@@ -280,6 +377,9 @@ int32 aichrif_try_handle(int32 fd){
 
 void do_init_map_aichrif(void){
 	g_shells.reserve(8192);
+	add_timer_func_list(aichrif_report_timer, "aichrif_report");
+	add_timer_interval(gettick() + AI_REPORT_PERIOD_MS, aichrif_report_timer,
+		0, 0, AI_REPORT_PERIOD_MS);
 }
 
 void do_final_map_aichrif(void){
