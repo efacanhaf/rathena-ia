@@ -54,8 +54,9 @@ uint16 g_spawn_within = 0;
 int32  g_spawn_pending = 0;
 int32  g_spawn_emitted = 0;
 constexpr int32 SPAWN_BATCH_PER_TICK = 2;
-// Phase 2.3 multi-shell: 10 shells around the prt_fild08 mob cluster.
-constexpr int32 SPAWN_HARD_CAP = 10;
+// Phase 2.9 smoke test: 20 shells in pay_dun01 (skeleton/eggyra/drainliar
+// dungeon). This is the closing milestone for Phase 2 in the plan.
+constexpr int32 SPAWN_HARD_CAP = 20;
 }
 
 /// 0 = not connected
@@ -364,9 +365,9 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		}
 		char nm[NAME_LENGTH];
 		names_generate(nm);
-		// Phase 2.3 multi-shell: spread around the prt_fild08 mob cluster.
-		uint16 bx = (uint16)(150 + (rnd() % 30));    // 150..179
-		uint16 by = (uint16)(320 + (rnd() % 30));    // 320..349
+		// Phase 2.9 smoke test: spread around the pay_dun01 entry area.
+		uint16 bx = (uint16)(170 + (rnd() % 30));    // 170..199
+		uint16 by = (uint16)(160 + (rnd() % 30));    // 160..189
 		ai_shell_init init{};
 		init.shell_id = sid;
 		init.name = nm;
@@ -374,9 +375,8 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		init.sex = (uint8)(rnd() % 2);
 		init.hair = (uint16)(1 + rnd() % 20);
 		init.hair_color = (uint16)(rnd() % 8);
-		// Phase 2.3 smoke test: force prt_fild08; full per-map sampler
-		// is Phase 3.
-		init.map_name = "prt_fild08";
+		// Phase 2.9 smoke test: force pay_dun01.
+		init.map_name = "pay_dun01";
 		init.x = bx;
 		init.y = by;
 		init.dir = (uint8)(rnd() % 8);
