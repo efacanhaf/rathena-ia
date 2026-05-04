@@ -100,7 +100,10 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	CREATE(sd, map_session_data, 1);
 	new (sd) map_session_data();
 
-	pc_setnewpc(sd, p->shell_id, p->shell_id, 0, gettick(), p->sex, 0);
+	// fd=-1: shells have no client. session_isValid(fd) returns false for
+	// negative fd, so clif's SELF send path becomes a no-op. Passing 0
+	// hits session[0] (console listener) and crashes WFIFOHEAD.
+	pc_setnewpc(sd, p->shell_id, p->shell_id, 0, gettick(), p->sex, -1);
 
 	// Identity
 	safestrncpy(sd->status.name, p->name, NAME_LENGTH);
