@@ -177,10 +177,14 @@
   <ItemGroup>
     <ClCompile Include="ai-server.cpp" />
     <ClCompile Include="aichrif.cpp" />
+    <ClCompile Include="names.cpp" />
+    <ClCompile Include="shell_pool.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ai-server.hpp" />
     <ClInclude Include="aichrif.hpp" />
+    <ClInclude Include="names.hpp" />
+    <ClInclude Include="shell_pool.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

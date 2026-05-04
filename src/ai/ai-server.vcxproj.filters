@@ -15,12 +15,24 @@
     <ClCompile Include="aichrif.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="names.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="shell_pool.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ai-server.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="aichrif.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="names.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="shell_pool.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

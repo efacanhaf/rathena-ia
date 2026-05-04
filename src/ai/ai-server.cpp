@@ -18,6 +18,8 @@
 #include <config/core.hpp>
 
 #include "aichrif.hpp"
+#include "names.hpp"
+#include "shell_pool.hpp"
 
 using namespace rathena;
 using namespace rathena::server_core;
@@ -35,11 +37,21 @@ int32 parse_console(const char* buf){
 	if (strcmpi(buf, "shutdown") == 0 || strcmpi(buf, "exit") == 0 || strcmpi(buf, "quit") == 0 || strcmpi(buf, "end") == 0) {
 		global_core->signal_shutdown();
 	} else if (strcmpi(buf, "status") == 0) {
-		ShowInfo("ai-server status: char_fd=%d, aichrif_state=%d\n", char_fd, aichrif_state);
+		ShowInfo("ai-server status: char_fd=%d, aichrif_state=%d, shells_active=%u, total_allocs=%u\n",
+			char_fd, aichrif_state, shell_pool_active_count(), shell_pool_total_allocs());
 	} else if (strcmpi(buf, "alive") == 0) {
 		ShowInfo("ai-server: I'm alive.\n");
+	} else if (strncmpi(buf, "alloc ", 6) == 0) {
+		int32 n = atoi(buf + 6);
+		if (n <= 0 || n > 1000) n = 5;
+		for (int32 i = 0; i < n; i++) {
+			uint32 id = shell_pool_alloc();
+			char name[NAME_LENGTH];
+			names_generate(name);
+			ShowInfo("  shell #%d: id=%u name=%s\n", i + 1, id, name);
+		}
 	} else {
-		ShowInfo("Console commands: status | alive | shutdown\n");
+		ShowInfo("Console commands: status | alive | alloc <N> | shutdown\n");
 	}
 	return 0;
 }
@@ -109,6 +121,18 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 		return false;
 	}
 
+	do_init_shell_pool();
+	do_init_names();
+
+	// Phase 1.2 smoke test: prove the pool + name generator work end-to-end.
+	// Removed in Phase 1.5 once the spawner consumes them for real.
+	for (int32 i = 0; i < 3; i++) {
+		uint32 id = shell_pool_alloc();
+		char name[NAME_LENGTH];
+		names_generate(name);
+		ShowInfo("ai-server[selftest]: shell %d -> id=%u name=%s\n", i + 1, id, name);
+	}
+
 	do_init_aichrif();
 
 	ShowStatus("ai-server is " CL_GREEN "ready" CL_RESET " (listening %s:%u, target char-server %s:%u).\n",
@@ -123,6 +147,7 @@ void AIServer::handle_main(t_tick next){
 
 void AIServer::finalize(){
 	do_final_aichrif();
+	do_final_shell_pool();
 	ShowStatus("ai-server: finalized.\n");
 }
 
