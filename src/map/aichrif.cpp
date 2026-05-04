@@ -340,6 +340,7 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 	p.cmd = PACKET_AI_SHELL_REPORT;
 	p.len = sizeof(p);
 	p.shell_id = shell_id;
+	p.mapindex = (uint16)sd->mapindex;
 	p.x = (uint16)sd->x;
 	p.y = (uint16)sd->y;
 	p.hp = (uint32)sd->battle_status.hp;
@@ -446,6 +447,16 @@ static int32 aichrif_handle_cmd(int32 fd){
 			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_EMOTE_S)) return 0;
 			const PACKET_AI_CMD_EMOTE_S* e = (const PACKET_AI_CMD_EMOTE_S*)RFIFOP(fd, 0);
 			clif_emotion(*sd, (emotion_type)e->emote_id);
+			break;
+		}
+		case AI_CMD_WARP: {
+			if (RFIFOREST(fd) < sizeof(PACKET_AI_CMD_WARP_S)) return 0;
+			const PACKET_AI_CMD_WARP_S* w = (const PACKET_AI_CMD_WARP_S*)RFIFOP(fd, 0);
+			char nm[sizeof(w->map_name) + 1] = {0};
+			memcpy(nm, w->map_name, sizeof(w->map_name));
+			int16 m = map_mapname2mapid(nm);
+			if (m < 0) break;
+			pc_setpos(sd, mapindex_name2id(nm), w->x, w->y, CLR_TELEPORT);
 			break;
 		}
 		case AI_CMD_SAY: {

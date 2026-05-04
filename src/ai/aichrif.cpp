@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -30,8 +31,12 @@ struct shell_state {
 	uint32 shell_id;
 	uint16 job;            // for skill rotation lookup
 	spawn_category cat;    // map category drives behavior
+	std::string home_map;  // spawn map; drift correction warps back here
+	uint16 home_x, home_y; // spawn cell
 	uint16 base_x, base_y; // anchor point; wander stays within ±radius
 	// Last REPORT snapshot (Phase 2.2). Zeroed until first packet arrives.
+	uint16 cur_mapindex;
+	uint16 home_mapindex_seen; // first reported mapindex (== home)
 	uint16 cur_x, cur_y;
 	uint32 hp, max_hp;
 	uint32 sp, max_sp;
@@ -118,6 +123,21 @@ int32 aichrif_send_sit(int32 fd, uint32 shell_id){
 }
 int32 aichrif_send_stand(int32 fd, uint32 shell_id){
 	return aichrif_send_simple_op(fd, shell_id, AI_CMD_STAND);
+}
+
+int32 aichrif_send_warp(int32 fd, uint32 shell_id, const char* map_name, uint16 x, uint16 y){
+	PACKET_AI_CMD_WARP_S p{};
+	p.hdr.cmd = PACKET_AI_SHELL_CMD;
+	p.hdr.len = sizeof(p);
+	p.hdr.shell_id = shell_id;
+	p.hdr.op = AI_CMD_WARP;
+	safestrncpy(p.map_name, map_name, sizeof(p.map_name));
+	p.x = x;
+	p.y = y;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
 }
 
 int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id){
@@ -288,6 +308,8 @@ static int32 aichrif_parse_report(int32 fd){
 	auto it = g_shell_idx.find(p->shell_id);
 	if (it != g_shell_idx.end() && it->second < g_shells_local.size()) {
 		shell_state& s = g_shells_local[it->second];
+		if (s.home_mapindex_seen == 0) s.home_mapindex_seen = p->mapindex;
+		s.cur_mapindex = p->mapindex;
 		s.cur_x = p->x; s.cur_y = p->y;
 		s.hp = p->hp; s.max_hp = p->max_hp;
 		s.sp = p->sp; s.max_sp = p->max_sp;
@@ -440,6 +462,9 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		st.shell_id = sid;
 		st.job = t.job;
 		st.cat = t.category;
+		st.home_map = t.map_name;
+		st.home_x = bx;
+		st.home_y = by;
 		st.base_x = bx;
 		st.base_y = by;
 		g_shell_idx[sid] = g_shells_local.size();
@@ -540,6 +565,26 @@ static TIMER_FUNC(aichrif_combat_timer){
 		} else {
 			aichrif_send_attack(char_fd, s.shell_id, tid, true);
 		}
+	}
+	return 0;
+}
+
+/// Phase 3.7: drift correction. Once per minute, scan shells whose latest
+/// REPORT.mapindex differs from their first-seen one — they wandered into
+/// a warp tile or got teleported by a GM — and send AI_CMD_WARP back to
+/// home. Only town shells get pulled back; field/dungeon roam is fine.
+static TIMER_FUNC(aichrif_drift_timer){
+	using namespace rathena::server_ai;
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	for (auto& s : g_shells_local) {
+		if (s.cat != spawn_category::TOWN) continue;
+		if (s.home_mapindex_seen == 0) continue; // never reported
+		if (s.cur_mapindex == 0) continue;
+		if (s.cur_mapindex == s.home_mapindex_seen) continue;
+		// Drifted. Warp back to spawn cell.
+		aichrif_send_warp(char_fd, s.shell_id, s.home_map.c_str(), s.home_x, s.home_y);
+		s.last_action_tick = now; // pause fidget for a tick
 	}
 	return 0;
 }
@@ -661,6 +706,9 @@ void do_init_aichrif(void){
 	// Ambient action: sit/stand/emote for town shells; rare emote elsewhere.
 	add_timer_func_list(aichrif_action_timer, "aichrif_action");
 	add_timer_interval(gettick() + 10 * 1000, aichrif_action_timer, 0, 0, 5000);
+	// Drift correction: pull town shells back home if they warped out.
+	add_timer_func_list(aichrif_drift_timer, "aichrif_drift");
+	add_timer_interval(gettick() + 60 * 1000, aichrif_drift_timer, 0, 0, 60 * 1000);
 	// Spawn drain: 20 SHELL_SPAWN packets per 200ms = 100/s ramp-up.
 	add_timer_func_list(aichrif_spawn_drain_timer, "aichrif_spawn_drain");
 	add_timer_interval(gettick() + 1 * 1000, aichrif_spawn_drain_timer, 0, 0, 200);

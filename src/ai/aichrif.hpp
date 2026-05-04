@@ -59,6 +59,9 @@ int32 aichrif_send_sit(int32 fd, uint32 shell_id);
 int32 aichrif_send_stand(int32 fd, uint32 shell_id);
 int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id);
 
+/// Drift correction warp (Phase 3.7).
+int32 aichrif_send_warp(int32 fd, uint32 shell_id, const char* map_name, uint16 x, uint16 y);
+
 /// Inter-server packet opcodes (kept here so ai-server doesn't depend on map/).
 constexpr uint16 PACKET_AI_HELLO         = 0x2b30;
 constexpr uint16 PACKET_AI_ACK           = 0x2b31;

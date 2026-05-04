@@ -159,6 +159,7 @@ struct PACKET_AI_SHELL_REPORT_S {
 	uint16 cmd;
 	uint16 len;
 	uint32 shell_id;
+	uint16 mapindex;    // mapindex_id of current map (Phase 3.7 drift check)
 	uint16 x, y;
 	uint32 hp, max_hp;
 	uint32 sp, max_sp;
@@ -166,6 +167,16 @@ struct PACKET_AI_SHELL_REPORT_S {
 	uint8  enemy_count; // 0..AI_REPORT_MAX_ENEMIES
 	uint8  pad[3];
 	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
+};
+
+/// AI_CMD_WARP — pc_setpos shell back to a known map+cell. Used for drift
+/// correction when a town shell wanders through a warp tile.
+constexpr uint8 AI_CMD_WARP = 9;
+struct PACKET_AI_CMD_WARP_S {
+	PACKET_AI_SHELL_CMD_HEADER hdr;
+	char   map_name[12]; // MAP_NAME_LENGTH (without _EXT) is enough
+	uint16 x, y;
+	uint8  pad[2];
 };
 
 #pragma pack(pop)
