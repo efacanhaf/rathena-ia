@@ -109,28 +109,37 @@ static int32 aichrif_parse_connectack(int32 fd){
 	aichrif_state = 2;
 	ShowStatus("ai-server: handshake OK with char-server (fd=%d).\n", fd);
 
-	// Phase 1.5a smoke test: spawn a single wandering shell. Phase 1.5b will
-	// replace this with the population_spawn.yml loop.
-	uint32 sid = shell_pool_alloc();
-	if (sid != 0) {
+	// Phase 1.5b: spawn POPULATION_INIT shells across prontera. YAML parser
+	// for population_spawn.yml will replace the hardcoded layout in 1.5c.
+	constexpr int32 POPULATION_INIT = 50;
+	// Mix of basic jobs to make the crowd look heterogeneous.
+	const uint16 jobs[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 4001, 4002, 4003 };
+	const int32 num_jobs = (int32)(sizeof(jobs) / sizeof(jobs[0]));
+	int32 spawned = 0;
+	for (int32 i = 0; i < POPULATION_INIT; i++) {
+		uint32 sid = shell_pool_alloc();
+		if (sid == 0) break;
 		char nm[NAME_LENGTH];
 		names_generate(nm);
+		uint16 bx = (uint16)(146 + (rnd() % 21));   // 146..166
+		uint16 by = (uint16)(170 + (rnd() % 21));   // 170..190
 		ai_shell_init init{};
 		init.shell_id = sid;
 		init.name = nm;
-		init.class_ = 0;        // JOB_NOVICE
-		init.sex = 1;
-		init.hair = 1;
-		init.hair_color = 1;
+		init.class_ = jobs[rnd() % num_jobs];
+		init.sex = (uint8)(rnd() % 2);
+		init.hair = (uint16)(1 + rnd() % 20);
+		init.hair_color = (uint16)(rnd() % 8);
 		init.map_name = "prontera";
-		init.x = 156;
-		init.y = 180;
-		init.dir = 4;
-		init.behavior_id = 0;   // wander
+		init.x = bx;
+		init.y = by;
+		init.dir = (uint8)(rnd() % 8);
+		init.behavior_id = 0;
 		aichrif_send_shell_spawn(fd, init);
-		g_shells_local.push_back({sid, 156, 180});
-		ShowStatus("ai-server: requested first spawn id=%u name=%s @ prontera.\n", sid, nm);
+		g_shells_local.push_back({sid, bx, by});
+		spawned++;
 	}
+	ShowStatus("ai-server: requested %d shells in prontera.\n", spawned);
 	return 1;
 }
 
