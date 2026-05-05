@@ -37,6 +37,20 @@ struct PACKET_AI_SHELL_SPAWN_S {
 	uint16 y;
 	uint8  dir;          // facing 0..7
 	uint8  behavior_id;  // ai-server-side enum (Phase 2)
+	uint8  tier;         // 0=town, 1=field, 2=dungeon (Phase 3.12 stat ramp)
+	uint8  pad;
+	// Phase 4 profile fields. ai-server fills from population_profile.yml.
+	// Map-server feeds these into status_calc_pc — no HP/Atk/Def hardcoding.
+	uint16 base_level;
+	uint16 job_level;
+	uint16 str_, agi_, vit_, int_, dex_, luk_;
+	uint16 speed;
+	uint16 pad2;
+	// Equipment item nameids by slot, see ai_equip_slot in ai/profile.hpp.
+	// Indexes: 0=HandR/weapon 1=HeadTop 2=HeadMid 3=HeadLow 4=Armor
+	//          5=HandL/shield 6=Garment 7=Shoes 8=AccR 9=AccL
+	// 0 means empty slot.
+	uint32 equip[10];
 };
 
 /// PACKET_AI_SHELL_DESPAWN (0x2b41)

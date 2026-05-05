@@ -179,6 +179,7 @@
     <ClCompile Include="aichrif.cpp" />
     <ClCompile Include="chat.cpp" />
     <ClCompile Include="names.cpp" />
+    <ClCompile Include="profile.cpp" />
     <ClCompile Include="shell_pool.cpp" />
     <ClCompile Include="skill_picker.cpp" />
     <ClCompile Include="spawner.cpp" />
@@ -188,6 +189,7 @@
     <ClInclude Include="aichrif.hpp" />
     <ClInclude Include="chat.hpp" />
     <ClInclude Include="names.hpp" />
+    <ClInclude Include="profile.hpp" />
     <ClInclude Include="shell_pool.hpp" />
     <ClInclude Include="skill_picker.hpp" />
     <ClInclude Include="spawner.hpp" />

@@ -34,10 +34,20 @@ struct ai_shell_init {
 	uint8  sex;
 	uint16 hair;
 	uint16 hair_color;
+	uint16 head_top;
+	uint16 weapon;
 	const char* map_name;
 	uint16 x, y;
 	uint8  dir;
 	uint8  behavior_id;
+	uint8  tier;     // 0=town, 1=field, 2=dungeon
+
+	// Phase 4 — populated from population_profile.yml by the spawner.
+	uint16 base_level;
+	uint16 job_level;
+	uint16 str_, agi_, vit_, int_, dex_, luk_;
+	uint16 speed;
+	uint32 equip[10]; // see ai_equip_slot
 };
 int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
 
@@ -61,6 +71,9 @@ int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id);
 
 /// Drift correction warp (Phase 3.7).
 int32 aichrif_send_warp(int32 fd, uint32 shell_id, const char* map_name, uint16 x, uint16 y);
+
+/// Console-list helper: dumps every live shell with cur map+coord+hp.
+void aichrif_list_shells();
 
 /// Phase 3.9 runtime counters (read by the console "stats" command).
 struct ai_stats {

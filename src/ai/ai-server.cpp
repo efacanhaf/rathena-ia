@@ -20,6 +20,7 @@
 #include "aichrif.hpp"
 #include "chat.hpp"
 #include "names.hpp"
+#include "profile.hpp"
 #include "shell_pool.hpp"
 #include "skill_picker.hpp"
 #include "spawner.hpp"
@@ -65,15 +66,18 @@ int32 parse_console(const char* buf){
 			names_generate(name);
 			ShowInfo("  shell #%d: id=%u name=%s\n", i + 1, id, name);
 		}
+	} else if (strcmpi(buf, "list") == 0) {
+		aichrif_list_shells();
 	} else if (strcmpi(buf, "reload") == 0) {
 		// Phase 3.8: hot reload chat + skill rotations from yaml without
 		// dropping connected shells.
 		bool ok_chat = rathena::server_ai::chat_load("db/ai/population_chat.yml");
 		bool ok_sk   = rathena::server_ai::skill_picker_load("db/ai/population_skill_db.yml");
-		ShowInfo("ai-server: reload chat=%s skill_db=%s\n",
-			ok_chat ? "OK" : "FAIL", ok_sk ? "OK" : "FAIL");
+		bool ok_pr   = rathena::server_ai::profile_load("db/ai/population_profile.yml");
+		ShowInfo("ai-server: reload chat=%s skill_db=%s profile=%s\n",
+			ok_chat ? "OK" : "FAIL", ok_sk ? "OK" : "FAIL", ok_pr ? "OK" : "FAIL");
 	} else {
-		ShowInfo("Console commands: status | stats | alive | alloc <N> | reload | shutdown\n");
+		ShowInfo("Console commands: status | stats | list | alive | alloc <N> | reload | shutdown\n");
 	}
 	return 0;
 }
@@ -156,6 +160,11 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 	// Phase 2.4: per-job skill rotations + condition gates.
 	if (!rathena::server_ai::skill_picker_load("db/ai/population_skill_db.yml")) {
 		ShowWarning("ai-server: skill_picker not loaded; shells will only auto-attack.\n");
+	}
+
+	// Phase 4: per-job, per-tier stat/gear profiles.
+	if (!rathena::server_ai::profile_load("db/ai/population_profile.yml")) {
+		ShowWarning("ai-server: profile not loaded; shells fall back to hardcoded floor.\n");
 	}
 
 	// Phase 3.4: ambient chat lines.

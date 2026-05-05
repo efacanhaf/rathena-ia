@@ -26,6 +26,7 @@
 
 #include "map.hpp"
 #include "mob.hpp"
+#include "itemdb.hpp"
 #include "pc.hpp"
 #include "skill.hpp"
 #include "status.hpp"
@@ -111,13 +112,17 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->status.hair = p->hair;
 	sd->status.hair_color = p->hair_color;
 	sd->status.clothes_color = p->cloth_color;
+	// View IDs come straight from the packet — head_top/mid/bottom are item
+	// nameids (or view IDs) but weapon/shield/robe are WEAPON_TYPE / shield
+	// view enums set by status_calc_pc → pc_calcweapontype based on what's
+	// actually equipped after pc_setequipindex. Don't override them here.
 	sd->status.head_top = p->head_top;
 	sd->status.head_mid = p->head_mid;
 	sd->status.head_bottom = p->head_bottom;
-	sd->status.weapon = p->weapon;
-	sd->status.shield = p->shield;
-	sd->status.robe = p->robe;
-	sd->status.body = p->class_;
+	sd->status.weapon = 0;
+	sd->status.shield = 0;
+	sd->status.robe = 0;
+	sd->status.body = p->class_; // pc_jobchange sets body = class_; mirror that
 	sd->status.base_level = 1;
 	sd->status.job_level = 1;
 	sd->status.zeny = 0;
@@ -127,14 +132,41 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->status.last_point.x = p->x;
 	sd->status.last_point.y = p->y;
 
+	// Mirror pc_authok class validation exactly — if the job isn't valid the
+	// REAL pc_authok would have reset to NOVICE, and any difference between
+	// shell flow and real-player flow shows up in the client as a Novice
+	// sprite even though we set Sage on the server side.
 	uint64 mapid = pc_jobid2mapid(sd->status.class_);
-	sd->class_ = ((int64)mapid < 0) ? MAPID_NOVICE : mapid;
+	if (mapid == (uint64)-1 || !job_db.exists(sd->status.class_)) {
+		ShowError("aishell_create: invalid class %u for shell %u — falling back to NOVICE.\n",
+			sd->status.class_, p->shell_id);
+		sd->status.class_ = JOB_NOVICE;
+		sd->class_ = MAPID_NOVICE;
+	} else {
+		sd->class_ = mapid;
+	}
 
 	// Geometry
 	sd->m = m;
 	sd->x = p->x;
 	sd->y = p->y;
 	sd->mapindex = mapindex_name2id(p->map_name);
+	// Phase 3.13: nudge to a walkable cell. If the freecell search fails
+	// (e.g. requested cell is way out of map bounds), drop the spawn —
+	// otherwise map_addblock crashes the server with out-of-bounds coords.
+	{
+		int16 sx = sd->x, sy = sd->y;
+		if (map_search_freecell(nullptr, m, &sx, &sy, 100, 100, 1)) {
+			sd->x = sx;
+			sd->y = sy;
+		} else {
+			ShowError("aishell_create: no walkable cell near %s(%d,%d).\n",
+				p->map_name, p->x, p->y);
+			sd->~map_session_data();
+			aFree(sd);
+			return nullptr;
+		}
+	}
 
 	unit_dataset(sd);
 	sd->ud.dir = p->dir;
@@ -156,55 +188,103 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	for (int32 i = 0; i < MAX_EVENTTIMER; i++) sd->eventtimer[i] = INVALID_TIMER;
 	for (int32 i = 0; i < 3; i++) sd->hate_mob[i] = -1;
 
-	// Stats / status
-	sd->battle_status.hp = sd->battle_status.max_hp = 100;
-	sd->battle_status.sp = sd->battle_status.max_sp = 100;
-	sd->battle_status.speed = DEFAULT_WALK_SPEED;
-	sd->base_status.speed = DEFAULT_WALK_SPEED;
-	sd->battle_status.size = SZ_SMALL;
-	sd->battle_status.race = RC_PLAYER_HUMAN;
-	sd->base_status.mode = (e_mode)(MD_CANMOVE | MD_CANATTACK);
-	sd->battle_status.mode = (e_mode)(MD_CANMOVE | MD_CANATTACK);
-	// Melee range 1 — without this, status_get_range returns 0 and
-	// unit_attack/battle_check_range never lets the shell connect.
-	sd->battle_status.rhw.range = 1;
-	sd->base_status.rhw.range = 1;
-	sd->battle_status.amotion = 1000; // attack motion
-	sd->battle_status.adelay = 1500;  // attack delay
-	sd->battle_status.dmotion = 500;  // damage motion
-	// Phase 2 baseline so hit rate isn't garbage. Without status_calc_pc
-	// running, hit/flee/atk all default to 0 and the shell whiffs every
-	// poring. Real per-job stat tables come in Phase 4 (job profiles).
-	sd->status.base_level = 50;
-	sd->status.job_level = 30;
-	sd->status.str = 50; sd->status.agi = 50; sd->status.vit = 30;
-	sd->status.int_ = 30; sd->status.dex = 50; sd->status.luk = 30;
-	sd->battle_status.str = 50; sd->battle_status.agi = 50; sd->battle_status.vit = 30;
-	sd->battle_status.int_ = 30; sd->battle_status.dex = 50; sd->battle_status.luk = 30;
-	sd->battle_status.batk = 80;
-	sd->battle_status.rhw.atk = 80;
-	sd->battle_status.rhw.atk2 = 100;
-	sd->battle_status.hit = 150;       // base_lv 50 + dex 50 + buffer
-	sd->battle_status.flee = 100;      // base_lv 50 + agi 50
-	sd->battle_status.flee2 = 10;
-	sd->battle_status.cri = 10;
-	sd->battle_status.def = 5;
-	sd->battle_status.def2 = 10;
-	sd->battle_status.mdef = 5;
-	sd->battle_status.mdef2 = 10;
-	sd->battle_status.matk_min = 30;
-	sd->battle_status.matk_max = 50;
+	// Phase 4: feed sd through the canonical PC stat path. We populate
+	// status (level + stats) and inventory (equipped items) the same way
+	// pc_authok would after char-server load, then call status_calc_pc.
+	// Result: shell at lv X with weapon Y has the SAME final stats as a
+	// real player would, no hardcoded battle_status anywhere.
+	sd->status.base_level = p->base_level ? p->base_level : 1;
+	sd->status.job_level  = p->job_level  ? p->job_level  : 1;
+	sd->status.str = p->str_; sd->status.agi = p->agi_;
+	sd->status.vit = p->vit_; sd->status.int_ = p->int_;
+	sd->status.dex = p->dex_; sd->status.luk = p->luk_;
+	// HP/SP get overwritten by status_calc_pc but seed with 1 so it doesn't
+	// look "dead" before the calc runs (status.hp == 0 is the dead check).
+	sd->status.hp = 1; sd->status.sp = 1;
 
-	// Vars allocator (used by anti-bot, scripts; safe to alloc empty).
+	// Vars allocator (anti-bot, scripts) — alloc empty before any pc_*.
 	sd->regs.vars = i64db_alloc(DB_OPT_BASE);
 
 	sd->state.active = 1;
 	sd->state.connect_new = 0;
 	sd->state.pc_loaded = 1;
 
-	status_set_viewdata(sd, sd->status.class_);
+	// Equipment: copy each profile slot into the inventory and mark equipped.
+	// pc_setequipindex reads the equip mask to fill equip_index[] and the
+	// weapontype1/2. Use item_data->equip when available so 2H weapons
+	// occupy both hand slots automatically.
+	static const uint32 default_eqp[] = {
+		EQP_HAND_R, EQP_HEAD_TOP, EQP_HEAD_MID, EQP_HEAD_LOW, EQP_ARMOR,
+		EQP_HAND_L, EQP_GARMENT, EQP_SHOES,    EQP_ACC_R,   EQP_ACC_L,
+	};
+	int32 inv_i = 0;
+	for (int32 es = 0; es < 10 && inv_i < MAX_INVENTORY; es++) {
+		t_itemid nameid = (t_itemid)p->equip[es];
+		if (nameid == 0) continue;
+		std::shared_ptr<item_data> idata = item_db.find(nameid);
+		if (idata == nullptr) {
+			ShowWarning("aishell_create: shell %u equip slot %d nameid=%u unknown in item_db.\n",
+				p->shell_id, es, nameid);
+			continue;
+		}
+		auto& it = sd->inventory.u.items_inventory[inv_i];
+		it.nameid = nameid;
+		it.amount = 1;
+		it.identify = 1;
+		it.equip = (idata->equip != 0) ? idata->equip : default_eqp[es];
+		inv_i++;
+	}
 
+	pc_setinventorydata(*sd);
+
+	// Strip equip flag from items the class can't actually wear (Novice with
+	// Falchion, Mage with Sword, etc.). pc_setequipindex would happily wire
+	// them in otherwise — same anti-pattern that lets a shell visually carry
+	// a class-locked weapon.
+	for (int32 i = 0; i < MAX_INVENTORY; i++) {
+		if (sd->inventory.u.items_inventory[i].nameid == 0) continue;
+		if (sd->inventory.u.items_inventory[i].equip == 0) continue;
+		uint8 ack = pc_isequip(sd, i);
+		if (ack != ITEM_EQUIP_ACK_OK) {
+			sd->inventory.u.items_inventory[i].equip = 0;
+		}
+	}
+
+	pc_setequipindex(sd);
+
+	// CRITICAL: register sd in id_db BEFORE status_calc_pc. Item bonus
+	// scripts run during the calc and call script_rid2sd → map_id2sd,
+	// which fails (and aborts the script with "player not attached") if
+	// the player isn't in id_db yet. map_addblock can wait until after
+	// the calc is done.
 	map_addiddb(sd);
+
+	// Canonical recalc — exactly what pc_authok runs after char load.
+	status_calc_pc(sd, SCO_FIRST);
+
+	// Make sure the shell is alive after the recalc and has the AI mob bits
+	// status_check_skilluse expects (MD_CANATTACK).
+	sd->battle_status.hp = sd->battle_status.max_hp;
+	sd->battle_status.sp = sd->battle_status.max_sp;
+	sd->status.hp = sd->battle_status.max_hp;
+	sd->status.sp = sd->battle_status.max_sp;
+	sd->base_status.mode   = (e_mode)(sd->base_status.mode   | MD_CANMOVE | MD_CANATTACK);
+	sd->battle_status.mode = (e_mode)(sd->battle_status.mode | MD_CANMOVE | MD_CANATTACK);
+	if (p->speed > 0) {
+		sd->base_status.speed = p->speed;
+		sd->battle_status.speed = p->speed;
+	}
+
+	status_set_viewdata(sd, sd->status.class_);
+	// Force standing pose + re-anchor LOOK_BASE.
+	sd->vd.dead_sit = 0;
+	sd->vd.look[LOOK_BASE] = sd->status.class_;
+	// CRITICAL: broadcast the class via clif_changelook (same path the
+	// `changebase` script uses). Without this the client renders any
+	// manually-set class as Novice — even though the spawn packet carries
+	// the right class, the client only updates its sprite when LOOK_BASE
+	// changelook arrives.
+
 	if (map_addblock(sd) != 0) {
 		ShowError("aishell_create: map_addblock failed for shell %u.\n", p->shell_id);
 		map_deliddb(sd);
@@ -213,11 +293,24 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 		aFree(sd);
 		return nullptr;
 	}
+	ShowInfo("aishell pre-clif_spawn: status.class_=%u vd.look[BASE]=%d vd.dead_sit=%u sex=%d\n",
+		sd->status.class_, sd->vd.look[LOOK_BASE], (uint32)sd->vd.dead_sit, (int)sd->vd.sex);
 	clif_spawn(sd);
+	// Broadcast the full changelook chain AFTER spawn — mirrors what
+	// pc_jobchange runs at the very end. Without this the client keeps the
+	// placeholder Novice sprite from the initial spawn.
+	clif_changelook(sd, LOOK_BASE, sd->vd.look[LOOK_BASE]);
+#if PACKETVER >= 20151001
+	clif_changelook(sd, LOOK_HAIR, sd->vd.look[LOOK_HAIR]);
+#endif
+	clif_changelook(sd, LOOK_CLOTHES_COLOR, sd->vd.look[LOOK_CLOTHES_COLOR]);
+	clif_changelook(sd, LOOK_BODY2, sd->vd.look[LOOK_BODY2]);
+	clif_changelook(sd, LOOK_WEAPON, sd->status.weapon);
 
 	g_shells[p->shell_id] = sd;
-	ShowStatus("ai-server: shell %u '%s' spawned at %s(%d,%d).\n",
-		p->shell_id, p->name, p->map_name, p->x, p->y);
+	ShowStatus("ai-server: shell %u '%s' (class=%u) spawned at %s(%d,%d) lv=%u/%u weapon=%u/equip[HAND_R]=%u.\n",
+		p->shell_id, p->name, p->class_, p->map_name, p->x, p->y,
+		p->base_level, p->job_level, sd->status.weapon, p->equip[0]);
 	return sd;
 }
 
@@ -379,6 +472,17 @@ static int32 aichrif_handle_spawn(int32 fd){
 
 static int32 aichrif_handle_despawn(int32 fd){
 	uint32 shell_id = RFIFOL(fd, 4);
+	if (shell_id == 0) {
+		// Sentinel: wipe ALL shells. ai-server sends this on reconnect to
+		// clear any leftovers from a previous ai-server session that map
+		// still has alive in g_shells.
+		std::vector<uint32> ids;
+		ids.reserve(g_shells.size());
+		for (auto& kv : g_shells) ids.push_back(kv.first);
+		for (uint32 id : ids) aishell_destroy(id);
+		ShowInfo("ai-server: SHELL_DESPAWN wipe — destroyed %zu shells.\n", ids.size());
+		return 1;
+	}
 	aishell_destroy(shell_id);
 	ShowInfo("ai-server: SHELL_DESPAWN id=%u.\n", shell_id);
 	return 1;
@@ -456,7 +560,26 @@ static int32 aichrif_handle_cmd(int32 fd){
 			memcpy(nm, w->map_name, sizeof(w->map_name));
 			int16 m = map_mapname2mapid(nm);
 			if (m < 0) break;
-			pc_setpos(sd, mapindex_name2id(nm), w->x, w->y, CLR_TELEPORT);
+			int16 dx = (int16)w->x, dy = (int16)w->y;
+			if (!map_search_freecell(nullptr, m, &dx, &dy, 50, 50, 1)) {
+				dx = (int16)w->x; dy = (int16)w->y;
+			}
+			// pc_setpos triggers char-server save which crashes for shells
+			// (no char row). Do the warp manually: clear from old map, move,
+			// add to new map, respawn visual.
+			clif_clearunit_area(*sd, CLR_TELEPORT);
+			map_delblock(sd);
+			sd->m = m;
+			sd->x = dx;
+			sd->y = dy;
+			sd->mapindex = mapindex_name2id(nm);
+			if (map_addblock(sd) != 0) {
+				// new map full / out-of-bounds: try to put it back where it was
+				ShowError("aichrif: warp shell %u to %s(%d,%d) failed.\n",
+					hdr->shell_id, nm, dx, dy);
+				break;
+			}
+			clif_spawn(sd);
 			break;
 		}
 		case AI_CMD_SAY: {
@@ -482,10 +605,18 @@ static int32 aichrif_handle_cmd(int32 fd){
 				ShowWarning("ai-server: CAST unknown skill '%s' (shell %u).\n", nm, hdr->shell_id);
 				break;
 			}
-			if (c->kind == 1) {
+			int32 inf = skill_get_inf(sid);
+			if (inf == INF_PASSIVE_SKILL) {
+				ShowWarning("ai-server: CAST passive skill '%s' (shell %u) — dropped.\n", nm, hdr->shell_id);
+				break;
+			}
+			uint8 kind = c->kind;
+			if (kind == 1 && !(inf & INF_GROUND_SKILL)) kind = 0;
+			if (kind == 0 && (inf & INF_SELF_SKILL))    kind = 2;
+			if (kind == 1) {
 				unit_skilluse_pos(sd, c->x, c->y, sid, c->skill_lv);
 			} else {
-				uint32 tid = (c->kind == 2) ? sd->id : c->target_id;
+				uint32 tid = (kind == 2) ? sd->id : c->target_id;
 				unit_skilluse_id(sd, tid, sid, c->skill_lv);
 			}
 			break;
