@@ -138,7 +138,7 @@ function	script	F_DroWarperMenu	{
 		// Campos — blank=65, header=66
 		case 67: callfunc "F_DroWarpCast","alberta",218,210; break;
 		case 68: callfunc "F_DroWarpCast","glast_01",370,304; break;
-		case 69: callfunc "F_DroWarpCast","moc_para01",24,38; break;
+		case 69: callfunc "F_DroWarpCast","dali",139,118; break;	// Dimensional Device (Sara's Memory instance)
 		case 70: callfunc "F_DroWarpCast","sp_cor",132,226; break;
 		// cases 1,25,26,65,66 = headers/blanks (no-op)
 	}
