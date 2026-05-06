@@ -199,6 +199,17 @@ Body:
     Script: |
       callfunc "F_BoosterCallSummon", 1;
 
+# Booster Boxes -- remover EquipLevelMax: 10 do upstream (kRO restringe a
+# abrir so ate lvl 10; nao queremos isso no DRO porque o NPC Mega Booster
+# Support pode entregar a caixa em qualquer lvl e o jogador deve poder
+# abrir quando quiser).
+  - Id: 101538
+    AegisName: Booster_Call_Package
+    EquipLevelMax: 275
+  - Id: 103048
+    AegisName: P_Booster_Call_Package
+    EquipLevelMax: 275
+
 #Body:
 # THQ Quest Items
 #=============================================================

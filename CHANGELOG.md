@@ -6,6 +6,11 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-05-06
+
+### Mudado
+- **Booster Box e Premium Booster Box agora podem ser abertas em qualquer level.** A restrição original de Base Level 10 foi removida — o jogador pode segurar a caixa até quando quiser antes de abrir.
+
 ## [1.0.0] — 2026-04-30 (atualizado 2026-05-06)
 
 ### Booster pack rework + ep17.1 lock + VIP lockdown (2026-05-06)
