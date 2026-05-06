@@ -55,9 +55,9 @@ Header:
 # limpos no logout -- so falta destravar o NoSave.
 Body:
   - Status: Speedup0
-    # Default era EFST_MOVHASTE_HORSE -- visualmente confundia com
-    # AGI Up. Trocado para EFST_MOVHASTE_INFINITY (icone do Infinity
-    # Drink, totalmente distinto dos buffs de classe).
-    Icon: EFST_MOVHASTE_INFINITY
+    # DRO client mapeia EFST_MOVHASTE_HORSE/POTION para o mesmo
+    # sprite do AGI Up. EFST_VR_SPEED tem visual proprio distinto
+    # (testado).
+    Icon: EFST_VR_SPEED
     Flags:
       NoSave: false
