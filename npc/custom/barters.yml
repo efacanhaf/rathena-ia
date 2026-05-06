@@ -247,6 +247,13 @@ Body:
           - Index: 0
             Item: Booster_W_Ticket
             Amount: 1
+      # ----- Stats Soul Potion Selection Box (101470, 6 potions per box) -----
+      - Index: 31
+        Item: Minus_Status_Box_          # 1 box = 6 stat resets do stat escolhido
+        RequiredItems:
+          - Index: 0
+            Item: Booster_Coin
+            Amount: 1
 
 ###########################################################################
 ##= Guarani — Booster Armor / Metal Weapon Exchange (Prontera 148, 282)

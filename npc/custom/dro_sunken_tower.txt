@@ -402,32 +402,12 @@ OnMobDead:
 	// Device so e visivel quando floor_clear=1 (enabled em OnMobDead).
 	// Sem checagem do flag aqui — chegou a clicar = floor ja limpo.
 
-	// Party check (skipa attach/detach em si mesmo — quebra o RID do script)
-	.@chk_map$ = instance_mapname("1@ch_u");
-	.@party = getcharid(1);
-	getpartymember .@party, 2;
-	.@psize = $@partymembercount;
-	copyarray .@aids[0], $@partymemberaid[0], .@psize;
-	.@self_aid = getcharid(3);
-	.@on_map = 0;
-	.@dead = 0;
-	for (.@i = 0; .@i < .@psize; .@i++) {
-		if (.@aids[.@i] == 0) continue;          // offline
-		if (.@aids[.@i] == .@self_aid) {
-			// Self — ja no mapa (clicou no NPC), so valida HP sem detach
-			if (Hp > 0) .@on_map++; else .@dead++;
-			continue;
-		}
-		if (attachrid(.@aids[.@i])) {
-			if (strcharinfo(3) == .@chk_map$) {
-				if (Hp > 0) .@on_map++; else .@dead++;
-			}
-			detachrid;
-		}
-	}
-	if (.@dead > 0) {
+	// Check simples: o player que clicou ta vivo. attachrid em outros
+	// players quebra pra non-GM em algumas configs — usa apenas getmapunits
+	// pra contagem informativa, sem checar Hp remoto.
+	if (Hp <= 0) {
 		mes "[Dimensional Device]";
-		mes "Algum membro esta morto. Revivam antes de avancar.";
+		mes "Voce esta morto. Reviva antes de avancar.";
 		close;
 	}
 
