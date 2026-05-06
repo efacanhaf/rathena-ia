@@ -44,3 +44,20 @@
 Header:
   Type: STATUS_DB
   Version: 4
+
+# DimensionsRO -- buffs do Booster Call precisam persistir em logout.
+# Por default rAthena marca SC_SPEEDUP0/1 com NoSave: true (kRO faz
+# isso porque originalmente sao buffs de potion temporarios). Como
+# nossos itens dao 15-30min de mov speed, queremos persistir o
+# tempo restante igual AGI Up/Bless ja fazem por default.
+#
+# debuff_on_logout: 0 (status.conf:20) ja garante que buffs nao sao
+# limpos no logout -- so falta destravar o NoSave.
+Body:
+  - Status: Speedup0
+    # Default era EFST_MOVHASTE_HORSE -- visualmente confundia com
+    # AGI Up. Trocado para EFST_MOVHASTE_INFINITY (icone do Infinity
+    # Drink, totalmente distinto dos buffs de classe).
+    Icon: EFST_MOVHASTE_INFINITY
+    Flags:
+      NoSave: false

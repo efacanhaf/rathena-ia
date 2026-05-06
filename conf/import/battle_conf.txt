@@ -71,3 +71,8 @@ atcommand_mobinfo_type: 0
 // Travado em 120 pra match experiência canônica 17.1.
 max_third_parameter: 120
 max_third_trans_parameter: 120
+
+// === Dynamic NPC ===
+// Faz NPCs criados via duplicate_dynamic (ex: Booster Call) ja
+// nascerem virados pro player. Default rAthena = no.
+feature.dynamicnpc_direction: yes
