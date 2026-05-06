@@ -24,6 +24,7 @@
 #include <common/utils.hpp>
 
 #include "achievement.hpp"
+#include "admin_socket.hpp"
 #include "atcommand.hpp"
 #include "battle.hpp"
 #include "battleground.hpp"
@@ -5039,6 +5040,7 @@ void MapServer::finalize(){
 	chrif_char_reset_offline();
 	chrif_flush_fifo();
 
+	do_final_admin_socket();
 	do_final_atcommand();
 	do_final_battle();
 	do_final_chrif();
@@ -5469,6 +5471,8 @@ bool MapServer::initialize( int32 argc, char *argv[] ){
 		add_timer_func_list(parse_console_timer, "parse_console_timer");
 		add_timer_interval(gettick()+1000, parse_console_timer, 0, 0, 1000); //start in 1s each 1sec
 	}
+
+	do_init_admin_socket();
 
 	return true;
 }
