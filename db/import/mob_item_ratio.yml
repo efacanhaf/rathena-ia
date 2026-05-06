@@ -39,5 +39,7 @@ Body:
 # multiplier de battle_config (item_rate_common etc).
 # Ratio: 100 = 1x nativo. 1000 = 10x. 0 = remove o drop.
 # =============================================================================
-  - Item: EP17_1_EVT39   # Cor Core (25723) — 300x nativo
-    Ratio: 30000
+  - Item: EP17_1_EVT39   # Cor Core (25723) — 150x nativo (mob Rate:5 → 7.5%)
+    Ratio: 15000
+  - Item: EP17_1_EVT02   # Mysterious Component (25669) — 150x nativo (mob Rate:10 → 15%)
+    Ratio: 15000
