@@ -55,6 +55,9 @@ typedef int SOCKET;
 #include <vector>
 
 // Whitelist — only safe @reload-style commands. Anything not here is rejected.
+// "event" is allowed so the Discord cog can auto-chain `@event refresh` after
+// `@reloadbattleconf`, keeping the dro_event_manager NPC's cached baseline in
+// sync with battle_conf when an event is active.
 static const std::set<std::string> ADMIN_WHITELIST = {
     "reloadbattleconf",
     "reloaditemdb",
@@ -70,6 +73,7 @@ static const std::set<std::string> ADMIN_WHITELIST = {
     "reloadnpc",
     "reloadachievementdb",
     "reloadinstancedb",
+    "event",
 };
 
 struct AdminTask {

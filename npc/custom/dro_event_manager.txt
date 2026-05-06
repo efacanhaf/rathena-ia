@@ -28,27 +28,11 @@
 	end;
 
 OnInit:
-	// Captura baseline SOMENTE se nunca foi capturado. Persiste em $globals
-	// pra evitar re-captura em @reloadnpc enquanto eventos podem ter alterado
-	// as rates atuais. Pra recalibrar manualmente: @event recalib (sem evento ativo).
-	if ($dro_base_init == 0) {
-		$dro_base_exp    = getbattleflag("base_exp_rate");
-		$dro_base_job    = getbattleflag("job_exp_rate");
-		$dro_base_quest  = getbattleflag("quest_exp_rate");
-		$dro_base_common = getbattleflag("item_rate_common");
-		$dro_base_heal   = getbattleflag("item_rate_heal");
-		$dro_base_use    = getbattleflag("item_rate_use");
-		$dro_base_equip  = getbattleflag("item_rate_equip");
-		$dro_base_init   = 1;
-	}
-	// Atalhos $@ pra acesso rapido (mesma session).
-	$@dro_base_exp    = $dro_base_exp;
-	$@dro_base_job    = $dro_base_job;
-	$@dro_base_quest  = $dro_base_quest;
-	$@dro_base_common = $dro_base_common;
-	$@dro_base_heal   = $dro_base_heal;
-	$@dro_base_use    = $dro_base_use;
-	$@dro_base_equip  = $dro_base_equip;
+	// O baseline NUNCA fica internalizado neste NPC. As rates "normais" sao
+	// SEMPRE as do servidor (battle_conf). $dro_base_* so existe enquanto um
+	// evento esta ativo, e e capturado fresh da config no momento em que o
+	// evento comeca; quando o ultimo evento termina, restauramos baseline e
+	// limpamos $dro_base_init pra voltar a deixar a config dirigir as taxas.
 	bindatcmd "event", strnpcinfo(3) + "::OnAtcommand", 60, 99;
 
 	// Se restartou dentro da janela do fim de semana, retoma o flag.
@@ -60,13 +44,16 @@ OnInit:
 		else
 			$dro_wkn_on = 0;
 	}
-	callsub L_ApplyRates;
 
+	// Limpa evento manual ja expirado antes de aplicar.
 	if ($dro_man_until > 0 && gettimetick(2) >= $dro_man_until) {
 		$dro_man_until = 0;
 		$dro_man_kind$ = "";
 		$dro_man_pct   = 0;
 	}
+
+	callsub L_ApplyRates;
+
 	if ($dro_man_until > 0 || $dro_wkn_on > 0) {
 		stopnpctimer;
 		initnpctimer;
@@ -81,6 +68,7 @@ OnAtcommand:
 	if (.@sub$ == "status")  goto L_Status;
 	if (.@sub$ == "weekend") goto L_Weekend;
 	if (.@sub$ == "recalib") goto L_Recalib;
+	if (.@sub$ == "refresh") goto L_Refresh;
 
 	if (.@sub$ != "exp" && .@sub$ != "drop" && .@sub$ != "all") goto L_Help;
 	if (.@atcmd_numparameters < 3) goto L_Help;
@@ -120,27 +108,71 @@ OnAtcommand:
 
 // =============================================================================
 // Aplica taxas baseado no estado atual. Manual sobrescreve weekend.
-// Final rate = baseline + (baseline * boost / 100).
+//
+// Sem evento ativo: rates ficam EXATAMENTE como o servidor definiu (battle_conf
+// + suas mudancas via @reloadbattleconf). O NPC nao toca em nada e libera
+// $dro_base_init pra captura fresh no proximo evento.
+//
+// Com evento ativo: capturamos baseline da config UMA vez quando o primeiro
+// evento liga, e aplicamos boost = baseline + (baseline * pct / 100). Boosts
+// subsequentes (ex: weekend acumulando com manual) usam o mesmo baseline.
 // =============================================================================
 L_ApplyRates:
 	.@now = gettimetick(2);
 	.@man_active = ($dro_man_until > 0 && .@now < $dro_man_until) ? 1 : 0;
 	.@wkn_exp_active  = ($dro_wkn_on > 0 && $dro_wkn_exp  > 0) ? 1 : 0;
 	.@wkn_drop_active = ($dro_wkn_on > 0 && $dro_wkn_drop > 0) ? 1 : 0;
+	.@event_active = (.@man_active || .@wkn_exp_active || .@wkn_drop_active) ? 1 : 0;
+
+	if (!.@event_active) {
+		// Nada ativo. Se a gente estava segurando baseline cacheado, restaura
+		// e libera; senao, deixa as taxas em paz (battle_conf manda).
+		if ($dro_base_init == 1) {
+			setbattleflag "base_exp_rate",   $dro_base_exp;
+			setbattleflag "job_exp_rate",    $dro_base_job;
+			setbattleflag "quest_exp_rate",  $dro_base_quest;
+			setbattleflag "item_rate_common", $dro_base_common;
+			setbattleflag "item_rate_heal",   $dro_base_heal;
+			setbattleflag "item_rate_use",    $dro_base_use;
+			setbattleflag "item_rate_equip",  $dro_base_equip;
+			$dro_base_init = 0;
+		}
+		return;
+	}
+
+	// Primeira entrada com evento ativo desde a ultima rodada limpa: captura
+	// baseline da config. Captures subsequentes (mesmo cycle de evento) reusam.
+	if ($dro_base_init == 0) {
+		$dro_base_exp    = getbattleflag("base_exp_rate");
+		$dro_base_job    = getbattleflag("job_exp_rate");
+		$dro_base_quest  = getbattleflag("quest_exp_rate");
+		$dro_base_common = getbattleflag("item_rate_common");
+		$dro_base_heal   = getbattleflag("item_rate_heal");
+		$dro_base_use    = getbattleflag("item_rate_use");
+		$dro_base_equip  = getbattleflag("item_rate_equip");
+		$dro_base_init   = 1;
+	}
+	$@dro_base_exp    = $dro_base_exp;
+	$@dro_base_job    = $dro_base_job;
+	$@dro_base_quest  = $dro_base_quest;
+	$@dro_base_common = $dro_base_common;
+	$@dro_base_heal   = $dro_base_heal;
+	$@dro_base_use    = $dro_base_use;
+	$@dro_base_equip  = $dro_base_equip;
 
 	// EXP rates
 	if (.@man_active && ($dro_man_kind$ == "exp" || $dro_man_kind$ == "all")) {
-		.@exp_base  = $@dro_base_exp   + ($@dro_base_exp   * $dro_man_pct / 100);
-		.@exp_job   = $@dro_base_job   + ($@dro_base_job   * $dro_man_pct / 100);
-		.@exp_quest = $@dro_base_quest + ($@dro_base_quest * $dro_man_pct / 100);
+		.@exp_base  = $dro_base_exp   + ($dro_base_exp   * $dro_man_pct / 100);
+		.@exp_job   = $dro_base_job   + ($dro_base_job   * $dro_man_pct / 100);
+		.@exp_quest = $dro_base_quest + ($dro_base_quest * $dro_man_pct / 100);
 	} else if (.@wkn_exp_active) {
-		.@exp_base  = $@dro_base_exp   + ($@dro_base_exp   * $dro_wkn_exp / 100);
-		.@exp_job   = $@dro_base_job   + ($@dro_base_job   * $dro_wkn_exp / 100);
-		.@exp_quest = $@dro_base_quest + ($@dro_base_quest * $dro_wkn_exp / 100);
+		.@exp_base  = $dro_base_exp   + ($dro_base_exp   * $dro_wkn_exp / 100);
+		.@exp_job   = $dro_base_job   + ($dro_base_job   * $dro_wkn_exp / 100);
+		.@exp_quest = $dro_base_quest + ($dro_base_quest * $dro_wkn_exp / 100);
 	} else {
-		.@exp_base  = $@dro_base_exp;
-		.@exp_job   = $@dro_base_job;
-		.@exp_quest = $@dro_base_quest;
+		.@exp_base  = $dro_base_exp;
+		.@exp_job   = $dro_base_job;
+		.@exp_quest = $dro_base_quest;
 	}
 	setbattleflag "base_exp_rate",  .@exp_base;
 	setbattleflag "job_exp_rate",   .@exp_job;
@@ -148,20 +180,20 @@ L_ApplyRates:
 
 	// Drop rates
 	if (.@man_active && ($dro_man_kind$ == "drop" || $dro_man_kind$ == "all")) {
-		.@dr_common = $@dro_base_common + ($@dro_base_common * $dro_man_pct / 100);
-		.@dr_heal   = $@dro_base_heal   + ($@dro_base_heal   * $dro_man_pct / 100);
-		.@dr_use    = $@dro_base_use    + ($@dro_base_use    * $dro_man_pct / 100);
-		.@dr_equip  = $@dro_base_equip  + ($@dro_base_equip  * $dro_man_pct / 100);
+		.@dr_common = $dro_base_common + ($dro_base_common * $dro_man_pct / 100);
+		.@dr_heal   = $dro_base_heal   + ($dro_base_heal   * $dro_man_pct / 100);
+		.@dr_use    = $dro_base_use    + ($dro_base_use    * $dro_man_pct / 100);
+		.@dr_equip  = $dro_base_equip  + ($dro_base_equip  * $dro_man_pct / 100);
 	} else if (.@wkn_drop_active) {
-		.@dr_common = $@dro_base_common + ($@dro_base_common * $dro_wkn_drop / 100);
-		.@dr_heal   = $@dro_base_heal   + ($@dro_base_heal   * $dro_wkn_drop / 100);
-		.@dr_use    = $@dro_base_use    + ($@dro_base_use    * $dro_wkn_drop / 100);
-		.@dr_equip  = $@dro_base_equip  + ($@dro_base_equip  * $dro_wkn_drop / 100);
+		.@dr_common = $dro_base_common + ($dro_base_common * $dro_wkn_drop / 100);
+		.@dr_heal   = $dro_base_heal   + ($dro_base_heal   * $dro_wkn_drop / 100);
+		.@dr_use    = $dro_base_use    + ($dro_base_use    * $dro_wkn_drop / 100);
+		.@dr_equip  = $dro_base_equip  + ($dro_base_equip  * $dro_wkn_drop / 100);
 	} else {
-		.@dr_common = $@dro_base_common;
-		.@dr_heal   = $@dro_base_heal;
-		.@dr_use    = $@dro_base_use;
-		.@dr_equip  = $@dro_base_equip;
+		.@dr_common = $dro_base_common;
+		.@dr_heal   = $dro_base_heal;
+		.@dr_use    = $dro_base_use;
+		.@dr_equip  = $dro_base_equip;
 	}
 	setbattleflag "item_rate_common", .@dr_common;
 	setbattleflag "item_rate_heal",   .@dr_heal;
@@ -204,7 +236,11 @@ L_Off:
 
 L_Status:
 	dispbottom "[event] === Status ===";
-	dispbottom "  Baseline: EXP " + $@dro_base_exp + "%, Drop " + $@dro_base_common + "%";
+	if ($dro_base_init == 1) {
+		dispbottom "  Baseline (cacheado durante evento): EXP " + $dro_base_exp + "%, Drop " + $dro_base_common + "%";
+	} else {
+		dispbottom "  Sem evento ativo - rates seguem battle_conf direto: EXP " + getbattleflag("base_exp_rate") + "%, Drop " + getbattleflag("item_rate_common") + "%";
+	}
 	if ($dro_man_until > 0) {
 		.@rem = $dro_man_until - gettimetick(2);
 		dispbottom "  Manual: " + $dro_man_kind$ + " +" + $dro_man_pct + "% sobre a base, " + (.@rem/60) + "min restantes";
@@ -300,25 +336,57 @@ OnMon0300:
 	end;
 
 L_Recalib:
+	// Sem evento ativo, baseline e a config (battle_conf) — entao recalib so
+	// faz sentido pra forcar reset do estado interno do NPC. Util quando os
+	// $globals ficaram inconsistentes manualmente.
 	if ($dro_man_until > 0 || $dro_wkn_on > 0) {
-		dispbottom "[event] Recalib bloqueado: ha evento ativo. Encerre primeiro.";
+		dispbottom "[event] Recalib bloqueado: ha evento ativo. Use '@event refresh' pra atualizar baseline durante evento.";
 		end;
 	}
-	$dro_base_exp    = getbattleflag("base_exp_rate");
-	$dro_base_job    = getbattleflag("job_exp_rate");
-	$dro_base_quest  = getbattleflag("quest_exp_rate");
-	$dro_base_common = getbattleflag("item_rate_common");
-	$dro_base_heal   = getbattleflag("item_rate_heal");
-	$dro_base_use    = getbattleflag("item_rate_use");
-	$dro_base_equip  = getbattleflag("item_rate_equip");
-	$@dro_base_exp    = $dro_base_exp;
-	$@dro_base_job    = $dro_base_job;
-	$@dro_base_quest  = $dro_base_quest;
-	$@dro_base_common = $dro_base_common;
-	$@dro_base_heal   = $dro_base_heal;
-	$@dro_base_use    = $dro_base_use;
-	$@dro_base_equip  = $dro_base_equip;
-	dispbottom "[event] Baseline recapturado: EXP " + $dro_base_exp + "%, Drop " + $dro_base_common + "%.";
+	$dro_base_init    = 0;
+	$dro_base_exp     = 0;
+	$dro_base_job     = 0;
+	$dro_base_quest   = 0;
+	$dro_base_common  = 0;
+	$dro_base_heal    = 0;
+	$dro_base_use     = 0;
+	$dro_base_equip   = 0;
+	dispbottom "[event] Estado interno limpo. Rates atuais (battle_conf): EXP " + getbattleflag("base_exp_rate") + "%, Drop " + getbattleflag("item_rate_common") + "%.";
+	end;
+
+// =============================================================================
+// @event refresh — usar APOS @reloadbattleconf (com ou sem evento ativo).
+//
+// Restaura as rates pro baseline cacheado (se evento ativo, "desfaz" o boost),
+// re-le getbattleflag (= valor RAW de battle_conf que acabou de ser carregado),
+// e re-aplica boost ja com o baseline novo. Sem evento, vira no-op.
+// Sem isso, mudancas em battle_conf durante evento ficam mascaradas pelo cache.
+// =============================================================================
+L_Refresh:
+	.@now = gettimetick(2);
+	.@man_active = ($dro_man_until > 0 && .@now < $dro_man_until) ? 1 : 0;
+	.@wkn_active = ($dro_wkn_on > 0 && ($dro_wkn_exp > 0 || $dro_wkn_drop > 0)) ? 1 : 0;
+	if (!.@man_active && !.@wkn_active) {
+		// Sem evento, baseline = battle_conf direto, sem cache pra atualizar.
+		$dro_base_init = 0;
+		dispbottom "[event] Sem evento ativo. Rates atuais: EXP " + getbattleflag("base_exp_rate") + "%, Drop " + getbattleflag("item_rate_common") + "%.";
+		end;
+	}
+	// Restaura baseline cacheado pra que getbattleflag passe a refletir
+	// valores raw de battle_conf (sem o boost que esta atualmente vigente).
+	if ($dro_base_init == 1) {
+		setbattleflag "base_exp_rate",   $dro_base_exp;
+		setbattleflag "job_exp_rate",    $dro_base_job;
+		setbattleflag "quest_exp_rate",  $dro_base_quest;
+		setbattleflag "item_rate_common", $dro_base_common;
+		setbattleflag "item_rate_heal",   $dro_base_heal;
+		setbattleflag "item_rate_use",    $dro_base_use;
+		setbattleflag "item_rate_equip",  $dro_base_equip;
+	}
+	// Limpa cache pra forcar L_ApplyRates a recapturar fresh de getbattleflag.
+	$dro_base_init = 0;
+	callsub L_ApplyRates;
+	dispbottom "[event] Baseline atualizado de battle_conf. Boost re-aplicado: EXP " + getbattleflag("base_exp_rate") + "%, Drop " + getbattleflag("item_rate_common") + "%.";
 	end;
 
 L_Help:
@@ -332,6 +400,7 @@ L_Help:
 	dispbottom "  @event weekend off            - desabilita";
 	dispbottom "  @event weekend status         - mostra config";
 	dispbottom "[event] @event status           - mostra estado dos dois";
-	dispbottom "[event] @event recalib          - recaptura baseline (sem evento ativo)";
+	dispbottom "[event] @event recalib          - limpa estado interno (sem evento ativo)";
+	dispbottom "[event] @event refresh          - re-le baseline de battle_conf (uso apos @reloadbattleconf)";
 	end;
 }
