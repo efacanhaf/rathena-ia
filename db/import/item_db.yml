@@ -103,8 +103,10 @@ Body:
     Trade:
       NoDrop: true
       NoTrade: true
+      TradePartner: true
       NoSell: true
       NoCart: true
+      NoStorage: true
       NoGuildStorage: true
       NoMail: true
       NoAuction: true
@@ -121,8 +123,10 @@ Body:
     Trade:
       NoDrop: true
       NoTrade: true
+      TradePartner: true
       NoSell: true
       NoCart: true
+      NoStorage: true
       NoGuildStorage: true
       NoMail: true
       NoAuction: true
@@ -139,14 +143,38 @@ Body:
     Trade:
       NoDrop: true
       NoTrade: true
+      TradePartner: true
       NoSell: true
       NoCart: true
+      NoStorage: true
       NoGuildStorage: true
       NoMail: true
       NoAuction: true
     Script: |
       vip_time 43200;
       announce strcharinfo(0)+" ativou Ticket VIP 30 Dias!",bc_self;
+
+# Booster Pack (170) — override que respeita o lock "feels like
+# Ep 17.1". Enquanto npc/re/scripts_post_ep17_1.conf estiver
+# importado em scripts_main.conf, o NPC dro_ep17_1_lock_state seta
+# $@ep17_1_lock=1 no OnInit do server, e o item NAO entrega o
+# Booster_Pack_180 (101499). Quando o lock for retirado (linha de
+# import comentada), $@ep17_1_lock fica 0 e o 180 volta a cair
+# automaticamente — sem precisar reeditar este arquivo.
+#=============================================================
+  - Id: 101498
+    AegisName: Booster_Pack_170
+    Script: |
+      getitem Comp_Almighty,5;
+      getitem Comp_Power_Booster,5;
+      getitem E_Infinity_Drink,5;
+      getitem Booster_B_M_2,3;
+      getitem Lv_Up_T_170,5;
+      getitem Booster_Coin,82;
+      getitem World_Tour_Ticket,20;
+      if (!$@ep17_1_lock) {
+          getitem Booster_Pack_180,1;
+      }
 
 #Body:
 # THQ Quest Items

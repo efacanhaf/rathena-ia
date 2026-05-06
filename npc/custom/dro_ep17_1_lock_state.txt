@@ -1,0 +1,27 @@
+//===== DimensionsRO ==========================================
+//= Episode 17.1 lockdown — runtime flag for scripts.
+//===== Description: ==========================================
+//= Sets $@ep17_1_lock = 1 on server boot.
+//=
+//= This NPC is only loaded when scripts_post_ep17_1.conf is
+//= imported (i.e. while the "feels like Ep 17.1" lockdown is
+//= active). When the import in scripts_main.conf is commented
+//= out, this NPC is not loaded, $@ep17_1_lock stays at the
+//= default 0, and any script gated on it auto-unlocks.
+//=
+//= Use in scripts:
+//=     if (!$@ep17_1_lock) { ... only when lock is OFF ... }
+//= or
+//=     if ($@ep17_1_lock) { ... only when lock is ON ... }
+//=
+//= $@ vars are server-temp (cleared on reboot), so the flag is
+//= re-set every boot by OnInit. No persistence to clean up.
+//=============================================================
+
+-	script	dro_ep17_1_lock_state	-1,{
+	end;
+
+OnInit:
+	set $@ep17_1_lock, 1;
+	end;
+}

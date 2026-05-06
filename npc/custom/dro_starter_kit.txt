@@ -1,305 +1,34 @@
 //===== DimensionsRO ==========================================
-//= Adventurer Starter Kit (v4 - all tiers, sem shadow nas lower)
+//= Adventurer Starter Kit
 //===== Description: =========================================
-//= Welcome kit. 1× por char (DRO_STARTER_TAKEN).
-//= Detecta tier e entrega kit apropriado:
-//=
-//= 1st: arma vanilla low + Adventurer's Suit + Hood + Sandalia + Anel
-//= 2nd: arma vanilla mid + Saint's Robe + Manteau + Shoes + Glove
-//= Trans: arma Crimson + Valkyrian Armor/Manteau/Shoes + Megingjard + Brisingamen
-//= 3rd: 4-piece Booster set (variant) + 6 Shadow Paradise + arma Booster (Moedas de Ouro)
+//= Welcome NPC. Entrega 1x Booster Call Package (101538) por char.
+//= Flag: DRO_STARTER_TAKEN.
 //============================================================
 
 prt_in,37,95,4	script	Mega Booster Support#dro	4_M_ALCHE_A,{
 	mes "[Mega Booster Support]";
 	mes "Welcome to DimensionsRO!";
-	mes " ";
 
-	// Tier dispatch
-	// Trans 99 and 3rd 99 are the same level — diferença é só se trocou
-	// class. Trans 2nd cai em L_SecondKit (mesma base job, mesma arma mid).
-	if (Class >= Job_Rune_Knight) {
-		// 3rd kit (incl. Summoner, SN_E, etc.)
-		callsub L_ThirdKit;
-		close;
-	}
-	if ((eaclass() & 768) != 0) {	// EAJL_2 = 0x300 (matches both 2nd and Trans 2nd)
-		callsub L_SecondKit;
-		close;
-	}
-	callsub L_FirstKit;
-	close;
-
-// ============================================================
-// 1st-class kit
-// ============================================================
-L_FirstKit:
-	if (DRO_STARTER_T1) {
-		mes "[Mega Booster Support]";
-		mes "Voce ja pegou o kit do tier 1. Volta quando subir de tier.";
-		return;
-	}
-	mes "[Mega Booster Support]";
-	mes "Tier 1 - novato. Vou te equipar:";
-	mes "  arma + Adventurer's Suit + Hood + Sandalia + Anel";
-	next;
-	if (select("Confirmar:Cancelar") != 1) return;
-
-	.@wep = 0;
-	switch (BaseClass) {
-		case Job_Novice:
-		case Job_Swordman:    .@wep = 1106; break;	// Falchion
-		case Job_Mage:        .@wep = 1604; break;	// Wand
-		case Job_Archer:      .@wep = 1705; break;	// Composite Bow
-		case Job_Acolyte:     .@wep = 1505; break;	// Mace
-		case Job_Merchant:    .@wep = 1352; break;	// Battle Axe
-		case Job_Thief:       .@wep = 1207; break;	// Main Gauche
-	}
-	// Extended 1st classes (BaseClass nao cobre todas)
-	if (Class == Job_Super_Novice) .@wep = 1106;
-	if (Class == Job_Gunslinger) .@wep = 13116;	// Novice Revolver
-	if (Class == Job_Ninja) .@wep = 1207;	// Main Gauche
-	if (Class == Job_Taekwon) .@wep = -1;	// Taekwon usa fists, sem arma vanilla compativel
-
-	if (.@wep == 0) {
-		mes "Classe nao mapeada (Class=" + Class + "). Fala com GM.";
-		return;
-	}
-	if (checkweight(501, 1) == 0 || (MaxWeight - Weight) < 3000) {
-		mes "Inventario muito cheio. Volta mais leve.";
-		return;
-	}
-
-	if (.@wep > 0) getitem .@wep, 1;
-	getitem 2305, 1;	// Adventurer's Suit
-	getitem 2502, 1;	// Hood
-	getitem 2401, 1;	// Sandals
-	getitem 2607, 1;	// Clip (acc all-class incl Novice/SN)
-
-	set DRO_STARTER_T1, 1;
-	mes "[Mega Booster Support]";
-	mes "Pronto! Boa cacada.";
-	return;
-
-// ============================================================
-// 2nd-class kit (cobre 2nd nao-trans + Star Glad + Soul Linker)
-// ============================================================
-L_SecondKit:
-	if (DRO_STARTER_T2) {
-		mes "[Mega Booster Support]";
-		mes "Voce ja pegou o kit do tier 2.";
-		return;
-	}
-	mes "[Mega Booster Support]";
-	mes "Tier 2 - 2nd class. Vou te equipar:";
-	mes "  arma + Saint's Robe + Manteau + Shoes + Glove";
-	next;
-	if (select("Confirmar:Cancelar") != 1) return;
-
-	.@wep = 0;
-	switch (BaseJob) {
-		case Job_Knight:      .@wep = 1158; break;	// Two-Handed Sword
-		case Job_Priest:      .@wep = 1522; break;	// Stunner
-		case Job_Wizard:      .@wep = 1613; break;	// Mighty Staff
-		case Job_Blacksmith:  .@wep = 1361; break;	// Two-Handed Axe
-		case Job_Hunter:      .@wep = 1718; break;	// Hunter Bow
-		case Job_Assassin:    .@wep = 1254; break;	// Jamadhar
-		case Job_Crusader:    .@wep = 1126; break;	// Saber
-		case Job_Monk:        .@wep = 1813; break;	// Kaiser Knuckle
-		case Job_Sage:        .@wep = 1551; break;	// Bible
-		case Job_Rogue:       .@wep = 1222; break;	// Damascus
-		case Job_Alchemist:   .@wep = 1513; break;	// Morning Star (allows Alchemist)
-		case Job_Bard:        .@wep = 1907; break;	// Guitar
-		case Job_Dancer:      .@wep = 1958; break;	// Tail Whip
-	}
-	if (Class == Job_Star_Gladiator || Class == Job_Star_Gladiator2) .@wep = 1551;	// Bible (allows StarGladiator)
-	if (Class == Job_Soul_Linker) .@wep = 1613;
-
-	if (.@wep == 0) {
-		mes "Classe nao mapeada (Class=" + Class + "). Fala com GM.";
-		return;
-	}
-	if (checkweight(501, 1) == 0 || (MaxWeight - Weight) < 3000) {
-		mes "Inventario muito cheio. Volta mais leve.";
-		return;
-	}
-
-	getitem .@wep, 1;
-	getitem 2310, 1;	// Coat (all-class except Novice/SN)
-	getitem 2503, 1;	// Muffler (all-class except Novice/SN)
-	getitem 2403, 1;	// Shoes (all-class except Novice/SN)
-	getitem 2604, 1;	// Glove (all-class except Novice/SN)
-
-	set DRO_STARTER_T2, 1;
-	mes "[Mega Booster Support]";
-	mes "Pronto! Boa cacada.";
-	return;
-
-// ============================================================
-// 3rd-class kit (Booster armor variant + Shadow Paradise + arma Moedas de Ouro)
-// ============================================================
-L_ThirdKit:
 	if (DRO_STARTER_TAKEN) {
-		mes "[Mega Booster Support]";
-		mes "Voce ja pegou o kit 3rd.";
-		return;
-	}
-	if (BaseLevel < 99) {
-		mes "[Mega Booster Support]";
-		mes "I outfit fresh 3rd-class adventurers - but you need to reach";
-		mes "^FF4444Base Level 99^000000 first.";
-		return;
+		mes "Voce ja pegou seu kit inicial.";
+		close;
 	}
 
-	// variant: 0=Attacker, 1=Elemental, 2=Ranger, 3=Defender
-	.@swp = 0;
-	.@n = 0;
-	.@upg = 0;
-	switch (Class) {
-		// --- Atacante fisico (Attacker only) ---
-		case Job_Rune_Knight:
-		case Job_Rune_Knight_T:
-		case Job_Baby_Rune_Knight:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24698; .@upg = 600012; break;	// Ignition Wave Booster 2H Sword
-		case Job_Mechanic:
-		case Job_Mechanic_T:
-		case Job_Baby_Mechanic:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24700; .@upg = 620003; break;	// Power Swing Booster Axe
-		case Job_Genetic:
-		case Job_Genetic_T:
-		case Job_Baby_Genetic:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24701; .@upg = 500016; break;	// Hell Tornado Booster Sword
-		case Job_Guillotine_Cross:
-		case Job_Guillotine_Cross_T:
-		case Job_Baby_Guillotine_Cross:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24702; .@upg = 610013; break;	// Rolling Cross Booster Katar
-		case Job_Shadow_Chaser:
-		case Job_Shadow_Chaser_T:
-		case Job_Baby_Shadow_Chaser:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24703; .@upg = 510018; break;	// Magic Fatal Booster Dagger
-		case Job_Sura:
-		case Job_Sura_T:
-		case Job_Baby_Sura:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24707; .@upg = 560006; break;	// Rampage Arrow Booster Knuckle
-		case Job_Kagerou:
-		case Job_Oboro:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24710; .@upg = 650017; break;	// Wind Spear Petal Booster Huuma
-		case Job_Star_Emperor:
-			setarray .@allow[0], 0; .@n = 1; .@swp = 24712; .@upg = 540039; break;	// Moon Starlight Booster Book
-
-		// --- Royal Guard: Attacker ou Defender ---
-		case Job_Royal_Guard:
-		case Job_Royal_Guard_T:
-		case Job_Baby_Royal_Guard:
-			setarray .@allow[0], 0, 3; .@n = 2; .@swp = 24699; .@upg = 500015; break;	// Pressure Genesis Booster Sword
-
-		// --- Magico (Elemental only) ---
-		case Job_Warlock:
-		case Job_Warlock_T:
-		case Job_Baby_Warlock:
-			setarray .@allow[0], 1; .@n = 1; .@swp = 24704; .@upg = 640009; break;	// Crimson Strain Booster Staff
-		case Job_Sorcerer:
-		case Job_Sorcerer_T:
-		case Job_Baby_Sorcerer:
-			setarray .@allow[0], 1; .@n = 1; .@swp = 24705; .@upg = 540009; break;	// Spell Bolt Booster Book
-		case Job_Soul_Reaper:
-			setarray .@allow[0], 1; .@n = 1; .@swp = 24713; .@upg = 550052; break;	// Es Booster Staff
-
-		// --- Arch Bishop: Elemental ou Defender ---
-		case Job_Arch_Bishop:
-		case Job_Arch_Bishop_T:
-		case Job_Baby_Arch_Bishop:
-			setarray .@allow[0], 1, 3; .@n = 2; .@swp = 24706; .@upg = 550011; break;	// Adonus Booster Wand
-
-		// --- Ranged (Ranger only) ---
-		case Job_Ranger:
-		case Job_Ranger_T:
-		case Job_Baby_Ranger:
-			setarray .@allow[0], 2; .@n = 1; .@swp = 24708; .@upg = 700015; break;	// Arrow Booster Bow
-		case Job_Minstrel:
-		case Job_Minstrel_T:
-		case Job_Baby_Minstrel:
-			setarray .@allow[0], 2; .@n = 1; .@swp = 24709; .@upg = 570010; break;	// Metallic Vibration Booster Violin
-		case Job_Wanderer:
-		case Job_Wanderer_T:
-		case Job_Baby_Wanderer:
-			setarray .@allow[0], 2; .@n = 1; .@swp = 24709; .@upg = 580010; break;	// Metallic Vibration Booster Whip
-		case Job_Rebellion:
-			setarray .@allow[0], 2; .@n = 1; .@swp = 24711; .@upg = 830007; break;	// Fire Round Booster Gatling
-
-		// --- Doram: Attacker, Elemental ou Defender ---
-		case Job_Summoner:
-		case Job_Baby_Summoner:
-			setarray .@allow[0], 0, 1, 3; .@n = 3; .@swp = 24714; .@upg = 550050; break;	// Lunatic Picky Booster Foxtail
-
-		// --- Super Novice E: todas as 4 ---
-		case Job_Super_Novice_E:
-		case Job_Super_Baby_E:
-			setarray .@allow[0], 0, 1, 2, 3; .@n = 4; .@swp = 24715; .@upg = 510069; break;	// Super Novice Booster Dagger
-
-		default:
-			mes "Sua classe nao foi mapeada no kit. Contate um GM.";
-			return;
+	if (checkweight(501, 1) == 0 || (MaxWeight - Weight) < 1000) {
+		mes "Inventario muito cheio. Volta mais leve.";
+		close;
 	}
 
-	// Booster set IDs por variant: [Attacker, Elemental, Ranger, Defender]
-	setarray .@booster_armor[0],   450001, 450002, 450004, 450003;
-	setarray .@booster_shoes[0],   470000, 470001, 470003, 470002;
-	setarray .@booster_manteau[0], 480000, 480001, 480003, 480002;
-	setarray .@booster_acc[0],     490004, 490005, 490007, 490006;
-	setarray .@vname$[0],          "Attacker (fisico)", "Elemental (magico)", "Ranger (a distancia)", "Defender (suporte/tank)";
-
-	mes "[Mega Booster Support]";
-	mes "Hoje voce ganha o kit completo:";
-	mes " ";
-	mes "  ^228822*^000000 4 pecas do Booster Set (variant a sua escolha)";
-	mes "  ^228822*^000000 Advanced Paradise Shadow Weapon (sua classe)";
-	mes "  ^228822*^000000 Shadow Shield / Armor / Shoes / Earring / Pendant";
-	mes "  ^228822*^000000 Arma Booster (Moedas de Ouro)";
 	next;
+	if (select("Pegar Booster box:Cancelar") != 1) close;
 
-	if (.@n == 1) {
-		.@variant = .@allow[0];
-		mes "[Mega Booster Support]";
-		mes "Para sua classe, vou entregar o set ^228822" + .@vname$[.@variant] + "^000000.";
-		next;
-		if (select("Confirmar:Cancelar") != 1) return;
-	} else {
-		mes "[Mega Booster Support]";
-		mes "Sua classe pode equipar mais de uma variant. Qual prefere?";
-		.@menu$ = "";
-		for (.@i = 0; .@i < .@n; .@i++) {
-			.@menu$ = .@menu$ + .@vname$[.@allow[.@i]] + ":";
-		}
-		.@menu$ = .@menu$ + "Cancelar";
-		.@pick = select(.@menu$);
-		if (.@pick > .@n) return;
-		.@variant = .@allow[.@pick - 1];
-	}
-
-	if (checkweight(501, 1) == 0 || (MaxWeight - Weight) < 5000) {
-		mes "[Mega Booster Support]";
-		mes "Voce esta carregando peso/itens demais.";
-		mes "Volte com inventario mais leve.";
-		return;
-	}
-
-	getitem .@booster_armor[.@variant],   1;
-	getitem .@booster_shoes[.@variant],   1;
-	getitem .@booster_manteau[.@variant], 1;
-	getitem .@booster_acc[.@variant],     1;
-	getitem .@swp, 1;
-	getitem 24693, 1;	// Shadow Shield
-	getitem 24694, 1;	// Shadow Armor
-	getitem 24695, 1;	// Shadow Shoes
-	getitem 24696, 1;	// Shadow Earring
-	getitem 24697, 1;	// Shadow Pendant
-	if (.@upg) getitem .@upg, 1;
-
+	if (vip_status(VIP_STATUS_ACTIVE))
+		getitem 103048, 1;
+	else
+		getitem 101538, 1;
 	set DRO_STARTER_TAKEN, 1;
 
 	mes "[Mega Booster Support]";
-	mes "Pronto! Boa cacada, aventureiro.";
-	return;
-
+	mes "Pronto! Boa cacada.";
+	close;
 }
