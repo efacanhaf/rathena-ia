@@ -6,7 +6,38 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [1.0.0] — 2026-04-30 (atualizado 2026-05-05)
+## [1.0.0] — 2026-04-30 (atualizado 2026-05-06)
+
+### Booster pack rework + ep17.1 lock + VIP lockdown (2026-05-06)
+
+- **Mega Booster Support NPC** (prt_in,37,95): reduzido a 1 item por char.
+  VIP recebe 103048 (Booster Call Package especial), não-VIP recebe
+  101538. Toda a lógica antiga de tier/variant/seleção foi removida.
+- **Centro#booster** (prontera 166,300) slot 5: trocado `Boost_Up_2`
+  (100044) por `Booster_W_Up_1` (100338, Booster Weapon Phase 1 Upgrade
+  Package). Mesmo custo de 20 Booster_Coin.
+- **Booster Pack distribution**: o `Booster_W_Up_3` saiu da box do nível
+  100. As três phases agora vivem em boxes específicas:
+  - Box 130 → **Booster_W_Up_1** (Phase 1, refine até +9, max base +8)
+  - Box 150 → **Booster_W_Up_2** (Phase 2, refine até +11, max base +10)
+  - Box 170 → **Booster_W_Up_3** (Final, refine até +13, max base +12)
+  - Box 100 mantém o **Booster_W_Ticket** (selector das 18 armas Booster
+    no barter Centro).
+- **Episode 17.1 lock automatizado**: novo NPC `dro_ep17_1_lock_state`
+  seta `$@ep17_1_lock=1` no OnInit. Carregado via
+  `npc/re/scripts_post_ep17_1.conf` (mesmo conf que controla a parte
+  script-side do lock). Item `Booster_Pack_170` (101498) foi gateado
+  via `if (!$@ep17_1_lock)` para não entregar `Booster_Pack_180`
+  enquanto o lock estiver ativo. Quando o lock for retirado (comentar
+  o import em `scripts_main.conf`), a flag fica em 0 automaticamente
+  e o pack do 180 volta a cair sem precisar reeditar nada.
+- **Tickets VIP** (1270142/1270143/1270144 — 7d/15d/30d): completaram
+  todas as 9 trade flags (NoDrop, NoTrade, TradePartner, NoSell, NoCart,
+  NoStorage, NoGuildStorage, NoMail, NoAuction). Não-GMs não conseguem
+  jogar/vender/storage/cart/etc. Itens client-side ganharam descrição
+  custom + sprite VIP_Black_Card e foram adicionados ao
+  `data\ItemMoveInfoV5.txt` para visualização correta da restrição
+  no tooltip do inventário.
 
 ### Drop & EXP rate balance — wave 2 (2026-05-05 noite)
 
