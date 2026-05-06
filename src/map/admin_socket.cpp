@@ -54,11 +54,10 @@ typedef int SOCKET;
 #include <thread>
 #include <vector>
 
-// Whitelist — only safe @reload-style commands. Anything not here is rejected.
-// "event" is allowed so the Discord cog can auto-chain `@event refresh` after
-// `@reloadbattleconf`, keeping the dro_event_manager NPC's cached baseline in
-// sync with battle_conf when an event is active.
-static const std::set<std::string> ADMIN_WHITELIST = {
+// Default whitelist used when the conf file does not specify `allowed_commands`.
+// Anything not in the active whitelist is rejected. Conf override format:
+//   allowed_commands: reloadbattleconf,reloadmobdb,event
+static const std::set<std::string> DEFAULT_ADMIN_WHITELIST = {
     "reloadbattleconf",
     "reloaditemdb",
     "reloadmobdb",
@@ -75,6 +74,9 @@ static const std::set<std::string> ADMIN_WHITELIST = {
     "reloadinstancedb",
     "event",
 };
+
+// Active whitelist, populated by load_conf() at startup.
+static std::set<std::string> admin_whitelist;
 
 struct AdminTask {
 	std::string command;
@@ -132,7 +134,7 @@ static void send_line(SOCKET s, const char* line) {
 }
 
 static bool is_whitelisted(const std::string& cmd) {
-	return ADMIN_WHITELIST.count(cmd) > 0;
+	return admin_whitelist.count(cmd) > 0;
 }
 
 static void handle_client(SOCKET cs) {
@@ -245,11 +247,38 @@ static bool load_conf() {
 			admin_port = (uint16)atoi(vp);
 		else if (strcmp(k, "bind_ip") == 0)
 			admin_bind = vp;
+		else if (strcmp(k, "allowed_commands") == 0) {
+			// Comma-separated list of atcommand names, e.g.
+			// "reloadbattleconf,reloadmobdb,event"
+			std::string list(vp);
+			size_t pos = 0;
+			while (pos < list.size()) {
+				size_t comma = list.find(',', pos);
+				size_t end = (comma == std::string::npos) ? list.size() : comma;
+				size_t start = pos;
+				while (start < end && (list[start] == ' ' || list[start] == '\t'))
+					start++;
+				while (end > start && (list[end - 1] == ' ' || list[end - 1] == '\t'))
+					end--;
+				if (end > start)
+					admin_whitelist.insert(list.substr(start, end - start));
+				pos = (comma == std::string::npos) ? list.size() : comma + 1;
+			}
+		}
 	}
 	fclose(fp);
 	if (admin_token.empty() || admin_token == "CHANGE_ME") {
 		ShowWarning("[admin_socket] token not set in %s, disabling.\n", path);
 		return false;
+	}
+	if (admin_whitelist.empty()) {
+		// Fall back to the default whitelist when the conf does not override.
+		admin_whitelist = DEFAULT_ADMIN_WHITELIST;
+		ShowInfo("[admin_socket] using default whitelist (%zu commands).\n",
+		         admin_whitelist.size());
+	} else {
+		ShowInfo("[admin_socket] using conf whitelist (%zu commands).\n",
+		         admin_whitelist.size());
 	}
 	return true;
 }
