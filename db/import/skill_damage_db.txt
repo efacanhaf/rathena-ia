@@ -1,0 +1,115 @@
+// Skill Damage Adjustment Database
+//
+// Structure of Database:
+// SkillName,Caster,Map,Damage against Players{,Damage against Mobs{,Damage against Bosses{,Damage against Other}}}
+//
+// Caster: The groups for which the adjustment takes effect. (bitmask)
+//		BL_PC = Player
+//		BL_MOB = Monster
+//		BL_PET = Pet
+//		BL_HOM = Homunculus
+//		BL_MER = Mercenary
+//		BL_ELEM = Elemental
+//
+// Map:
+// 		1    - Normal (the maps that aren't classified as these maps below)
+// 		2    - PVP
+// 		4    - GVG
+// 		8    - Battlegrounds
+// 		16   - 'skill_damage' mapflag
+// Restricted zones - they're configured by 'restricted <number>' mapflag
+// 		32   - Zone 1
+// 		64   - Zone 2
+// 		128  - Zone 3
+// 		256  - Zone 4
+// 		512  - Zone 5
+// 		1024 - Zone 6
+// 		2048 - Zone 7
+//
+// Notes:
+//  	Damage is a percentage between -100 and 100000.
+//  	Negative values decrease damage and positive values increase it (0 = no change).
+//
+// Examples:
+// MC_MAMMONITE,BL_PC,1,50 // In normal maps, players deal +50% damage to other players with Mammonite.
+// MO_EXTREMITYFIST,BL_PC,6,-50 // In PVP and GVG, players deal -50% (half) damage to other players with Asura Strike.
+// AB_ADORAMUS,BL_PC,6,50,0,10,15 // In PVP and GVG, players deal +50% damage to other players, +0% to mobs, +10% to bosses, and +15% to other with Adoramus.
+
+// =============================================================================
+// DimensionsRO — Phase 3 + Phase 4 v2: net buff progressivo em 3rd-class skills.
+// Estratégia: 3rds são fracas pro conteúdo de 17.1. Buffar todas, sem cortar topo.
+// Tiered: skills mais fracas ganham buff maior, skills fortes ganham buff suave.
+// PvP unchanged (vs_players = 0). Caster=BL_PC, Map=1 (normal maps).
+// Format: skill,caster,map,vs_players,vs_mobs,vs_bosses,vs_other
+// =============================================================================
+
+// =============================================================================
+// Tier C — skills "dead" pré-Phase 3 (buff alto: Phase 3 + Phase 4 v2 +15% adicional)
+// =============================================================================
+
+// Royal Guard — solo PvE filler (Banishing Point / Earth Drive)
+LG_BANISHINGPOINT,BL_PC,1,0,65,65,65
+LG_EARTHDRIVE,BL_PC,1,0,65,65,65
+
+// Mechanic — non-Mado options
+NC_BOOSTKNUCKLE,BL_PC,1,0,65,65,65
+NC_ARMSCANNON,BL_PC,1,0,45,45,45
+
+// Sura — alt build to Tiger Cannon
+SR_KNUCKLEARROW,BL_PC,1,0,45,45,45
+
+// Shadow Chaser — Triangle Shot (main damage skill)
+SC_TRIANGLESHOT,BL_PC,1,0,65,65,65
+
+// Warlock — Chain Lightning
+WL_CHAINLIGHTNING_ATK,BL_PC,1,0,45,45,45
+
+// Arch Bishop — Magnus Exorcismus rework
+PR_MAGNUS,BL_PC,1,0,90,90,90
+
+// Kagerou/Oboro — Kunai Splash
+KO_BAKURETSU,BL_PC,1,0,45,45,45
+
+// =============================================================================
+// Tier A — main skills sub-tier de cada classe (+30%, novas)
+// =============================================================================
+
+// Royal Guard — Hesperus Lit (AoE party-dependent, solo-weak)
+LG_HESPERUSLIT,BL_PC,1,0,30,30,30
+
+// Rune Knight — Dragon Breath (fire + water; cai fora do Mado/2H build)
+RK_DRAGONBREATH,BL_PC,1,0,30,30,30
+RK_DRAGONBREATH_WATER,BL_PC,1,0,30,30,30
+
+// Mechanic — Vulcan Arm + Axe Boomerang (non-Mado primary)
+NC_VULCANARM,BL_PC,1,0,30,30,30
+NC_AXEBOOMERANG,BL_PC,1,0,30,30,30
+
+// Sura — Rampage Blaster (single-target sphere)
+SR_RAMPAGEBLASTER,BL_PC,1,0,30,30,30
+
+// Genetic — Demonic Fire (AoE non-Cart)
+GN_DEMONIC_FIRE,BL_PC,1,0,30,30,30
+
+// Arch Bishop — Judex (magic AoE)
+AB_JUDEX,BL_PC,1,0,30,30,30
+
+// Shadow Chaser — Fatal Menace (main AoE)
+SC_FATALMENACE,BL_PC,1,0,30,30,30
+
+// Warlock — Tetra Vortex / Jack Frost (burst alternatives)
+WL_TETRAVORTEX,BL_PC,1,0,30,30,30
+WL_JACKFROST,BL_PC,1,0,30,30,30
+
+// Ranger — Aimed Bolt (single-target meta)
+RA_AIMEDBOLT,BL_PC,1,0,30,30,30
+
+// =============================================================================
+// Tier S — skills strong (ex-Phase 4 nerf candidates) — buff suave +15%
+// =============================================================================
+
+GN_CARTCANNON,BL_PC,1,0,15,15,15
+WL_COMET,BL_PC,1,0,15,15,15
+SR_TIGERCANNON,BL_PC,1,0,15,15,15
+RA_ARROWSTORM,BL_PC,1,0,15,15,15
+AB_ADORAMUS,BL_PC,1,0,15,15,15

@@ -156,3 +156,10 @@ Thumbs.db
 
 # generated files
 generated
+
+# Local artifacts (not for commit)
+/log/
+/entities.json
+/mempalace.yaml
+*.local-backup
+/src/map/rathena-dev*-m.vs/
