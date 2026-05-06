@@ -176,6 +176,17 @@ Body:
           getitem Booster_Pack_180,1;
       }
 
+# Premium Booster Call (101473) -- usar teleporta para o NPC Centro
+# (Prontera 166,300). Flags.NoConsume mantem o item no inventario apos
+# o double-click (DELAYCONSUME_NOCONSUME no source).
+#=============================================================
+  - Id: 101473
+    AegisName: P_Booster_Call
+    Flags:
+      NoConsume: true
+    Script: |
+      warp "prontera",166,300;
+
 #Body:
 # THQ Quest Items
 #=============================================================
