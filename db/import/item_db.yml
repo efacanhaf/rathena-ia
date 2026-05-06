@@ -176,16 +176,28 @@ Body:
           getitem Booster_Pack_180,1;
       }
 
-# Premium Booster Call (101473) -- usar teleporta para o NPC Centro
-# (Prontera 166,300). Flags.NoConsume mantem o item no inventario apos
-# o double-click (DELAYCONSUME_NOCONSUME no source).
+# Booster_Call (100337) e P_Booster_Call (101473): invocam o
+# NPC Booster Call (regular ou premium) ao lado do jogador,
+# visivel apenas para ele. Logica em npc/custom/dro_booster_call.txt
+# (F_BoosterCallSummon).
+#
+# - Booster_Call: VR_MD_TILBY, buff 5min
+# - P_Booster_Call: VR_MD_TILBY2, buff 10min
+# Cooldown 5min compartilhado, opcao de storage em ambos.
+# Flags.NoConsume mantem o item no inventario.
 #=============================================================
+  - Id: 100337
+    AegisName: Booster_Call
+    Flags:
+      NoConsume: true
+    Script: |
+      callfunc "F_BoosterCallSummon", 0;
   - Id: 101473
     AegisName: P_Booster_Call
     Flags:
       NoConsume: true
     Script: |
-      warp "prontera",166,300;
+      callfunc "F_BoosterCallSummon", 1;
 
 #Body:
 # THQ Quest Items

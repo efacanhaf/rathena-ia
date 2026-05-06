@@ -1,0 +1,149 @@
+//===== DimensionsRO ==========================================
+//= Booster Call NPCs (Booster_Call 100337 + P_Booster_Call 101473)
+//===== Description: =========================================
+//= Os itens, ao serem usados (NoConsume), fazem duplicate_dynamic
+//= do NPC base perto do jogador. O duplicado:
+//=  - so e visivel pro jogador que invocou
+//=  - some sozinho apos feature.dynamicnpc_timeout (60s default)
+//=  - tem anti-duplicate (1 ativo por source por jogador)
+//=
+//= Opcoes do dialog (auto-aberto via doevent OnSummoned):
+//=  1) Receber buff: AGI Up + Blessing lvl 10 + mov speed.
+//=       Regular   (Booster_Call):   15 min  + SPEEDUP0 (25%)
+//=       Premium (P_Booster_Call):   30 min  + SPEEDUP1 (50%)
+//=     Cooldown compartilhado de 5min entre ambos os itens
+//=     (var permanente BoosterCallBuffCD).
+//=  2) Abrir Storage.
+//=  3) Cancelar.
+//=
+//= VIP swap (OnPCLoginEvent): ao logar, troca o item pra variant
+//= correta com base no vip_status. VIP fica com P_Booster_Call,
+//= nao-VIP com Booster_Call. Cobre 100% dos casos pq ambos itens
+//= sao NoStorage + NoCart (so existem em inventory).
+//============================================================
+
+// Bases ficam em prontera (1,1) e (1,2) -- canto fora da area
+// jogavel. Sem OnInit porque duplicate_dynamic roda o OnInit do
+// duplicate tambem (npc.cpp:5882). Click body = end (no-op),
+// entao mesmo se alguem alcancar a coord nada acontece. Unico
+// caminho de interacao = doevent ::OnSummoned via item.
+//
+// IMPORTANTE: floating script (- map) NAO funciona aqui --
+// npc.cpp:4211 forca class_ = JT_FAKENPC quando m == -1, o que
+// torna o duplicate invisivel.
+prontera,1,1,0	script	BoosterCallBase#dro	EP17_2_CHILD_ADMIN1,{
+	end;
+OnSummoned:
+	callfunc "F_BoosterCallDialog", 0;
+	end;
+}
+
+prontera,1,2,0	script	PBoosterCallBase#dro	EP17_2_CHILD_ADMIN2,{
+	end;
+OnSummoned:
+	callfunc "F_BoosterCallDialog", 1;
+	end;
+}
+
+// Chamada pelo Script do item: duplica o base perto do player e
+// abre o dialog automaticamente. Sem state pra gerenciar -- o
+// duplicado se auto-destroi apos 60s e o sistema bloqueia
+// duplicates simultaneos do mesmo source.
+function	script	F_BoosterCallSummon	{
+	.@variant = getarg(0);
+	.@base$ = "BoosterCallBase#dro";
+	if (.@variant == 1) .@base$ = "PBoosterCallBase#dro";
+
+	.@dup$ = duplicate_dynamic(.@base$);
+	if (.@dup$ == "") {
+		// Falhou: ja tem duplicate ativo desse source ou map tem MF_NODYNAMICNPC.
+		// Engine ja mandou packet pro client, nada mais a fazer.
+		end;
+	}
+	specialeffect2 EF_TELEPORTATION;
+	doevent .@dup$ + "::OnSummoned";
+	end;
+}
+
+// Dialog do NPC -- roda no contexto do duplicate (player attached).
+function	script	F_BoosterCallDialog	{
+	.@variant = getarg(0);
+	.@buff_dur = 900;          // 15min regular
+	if (.@variant == 1) .@buff_dur = 1800;   // 30min premium
+	.@cd = 300;                // 5min cooldown
+
+	mes "[Booster Call]";
+	mes "Salve, " + strcharinfo(0) + "! No que posso ajudar?";
+	next;
+	.@choice = select(
+		"^0055FFReceber buff^000000 (AGI Up + Blessing):" +
+		"^0055FFAbrir Storage^000000:" +
+		"Cancelar"
+	);
+
+	if (.@choice == 1) {
+		.@elapsed = gettimetick(2) - BoosterCallBuffCD;
+		if (BoosterCallBuffCD > 0 && .@elapsed < .@cd) {
+			.@remain = .@cd - .@elapsed;
+			.@min = .@remain / 60;
+			.@sec = .@remain % 60;
+			.@sec$ = .@sec + "";
+			if (.@sec < 10) .@sec$ = "0" + .@sec;
+			mes "[Booster Call]";
+			mes "Tem que esperar ^FF0000" + .@min + ":" + .@sec$ + "^000000 pra usar o buff de novo.";
+			close;
+		}
+		specialeffect2 EF_INCAGILITY;
+		sc_start SC_INCREASEAGI, .@buff_dur * 1000, 10;
+		specialeffect2 EF_BLESSING;
+		sc_start SC_BLESSING, .@buff_dur * 1000, 10;
+		// Mov speed: SPEEDUP0 nos dois (mesmo icone "horse"),
+		// val1 = 10% regular, 20% premium. SC nao usada por
+		// nenhuma classe (item-only).
+		.@spd = 10;
+		if (.@variant == 1) .@spd = 20;
+		sc_start SC_SPEEDUP0, .@buff_dur * 1000, .@spd;
+		BoosterCallBuffCD = gettimetick(2);
+		mes "[Booster Call]";
+		mes "Buff aplicado por ^00AA00" + (.@buff_dur / 60) + " minutos^000000. Boa cacada!";
+		close;
+	}
+
+	if (.@choice == 2) {
+		close2;
+		openstorage;
+		end;
+	}
+
+	close;
+}
+
+// VIP swap: ao logar, garante que o player esteja com o item certo.
+// VIP    -> upgrade Booster_Call (100337) para P_Booster_Call (101473)
+// noVIP  -> downgrade P_Booster_Call para Booster_Call
+//
+// Ambos itens tem NoStorage + NoCart, entao so existem em inventory.
+// Login event cobre 100% dos casos.
+-	script	dro_booster_call_vip_swap	-1,{
+	end;
+OnPCLoginEvent:
+	// IDs explicitos: o constant lookup do AegisName falhou em runtime
+	// quando ja havia override em db/import/item_db.yml -- ID literal
+	// e mais robusto.
+	if (vip_status(VIP_STATUS_ACTIVE)) {
+		.@n = countitem(100337);   // Booster_Call
+		if (.@n > 0) {
+			delitem 100337, .@n;
+			getitem 101473, .@n;   // P_Booster_Call
+			dispbottom "[Booster Call] Voce e VIP -- " + .@n + "x Booster Call atualizado para Premium.";
+		}
+	} else {
+		.@n = countitem(101473);   // P_Booster_Call
+		if (.@n > 0) {
+			delitem 101473, .@n;
+			getitem 100337, .@n;   // Booster_Call
+			dispbottom "[Booster Call] Sem VIP -- " + .@n + "x Premium Booster Call rebaixado para Regular.";
+		}
+	}
+	end;
+}
