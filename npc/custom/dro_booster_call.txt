@@ -24,14 +24,19 @@
 
 // Bases ficam em prontera (1,1) e (1,2) -- canto fora da area
 // jogavel. Sem OnInit porque duplicate_dynamic roda o OnInit do
-// duplicate tambem (npc.cpp:5882). Click body = end (no-op),
-// entao mesmo se alguem alcancar a coord nada acontece. Unico
-// caminho de interacao = doevent ::OnSummoned via item.
+// duplicate tambem (npc.cpp:5882) -- cloak ali cloakaria a copia.
+//
+// Click body = mesmo dialog que OnSummoned. Permite reabrir o
+// dialog clicando no NPC (sem precisar usar o item de novo
+// dentro da janela de timeout). Cooldown 5min gateia o buff de
+// qualquer forma. Base em prontera (1,1) e canto sem path,
+// inacessivel a player normal.
 //
 // IMPORTANTE: floating script (- map) NAO funciona aqui --
 // npc.cpp:4211 forca class_ = JT_FAKENPC quando m == -1, o que
 // torna o duplicate invisivel.
 prontera,1,1,0	script	BoosterCallBase#dro	EP17_2_CHILD_ADMIN1,{
+	callfunc "F_BoosterCallDialog", 0;
 	end;
 OnSummoned:
 	callfunc "F_BoosterCallDialog", 0;
@@ -39,6 +44,7 @@ OnSummoned:
 }
 
 prontera,1,2,0	script	PBoosterCallBase#dro	EP17_2_CHILD_ADMIN2,{
+	callfunc "F_BoosterCallDialog", 1;
 	end;
 OnSummoned:
 	callfunc "F_BoosterCallDialog", 1;
