@@ -91,7 +91,7 @@ Body:
             Item: Booster_Coin
             Amount: 20
       - Index: 5
-        Item: Boost_Up_2                 # Booster Weapon UpgradeBox (100044)
+        Item: Booster_W_Up_1             # Booster Weapon Phase 1 Upgrade Package (100338)
         RequiredItems:
           - Index: 0
             Item: Booster_Coin
