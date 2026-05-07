@@ -6,6 +6,15 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-05-07
+
+### Corrigido — Sunken Tower
+
+- **Dimensional Device não trava mais para membros não-líder.** Antes, quando um membro da party que não era o líder clicava no Device, o NPC abria o diálogo e ficava sem opção de fechar. Agora ele recebe uma mensagem informando que apenas o líder avança o floor, e o diálogo fecha normal.
+- **Cooldown de 3 dias agora é aplicado na criação da instance**, não na conclusão. Isso fecha o exploit de destruir a instance cedo pra resetar o cooldown. O cooldown é stampado em todos os membros online da party no momento em que o líder cria a instance com a Leticia.
+- **Verificação de level dos membros da party no momento da criação.** A diferença de Base Level entre membros online tem que ser compatível com a regra de split de EXP (≤15 levels). Se houver alguém fora da faixa, a Leticia bloqueia a criação. Fecha o exploit de criar com um líder de level baixo e ter chars fortes clearando os mobs.
+- Removida a opção de teste de GM do menu da Leticia.
+
 ## 2026-05-06
 
 ### Mudado
