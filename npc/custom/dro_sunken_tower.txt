@@ -47,7 +47,6 @@ alberta,214,74,4	script	Leticia#st	4_4JOB_LETICIA,{
 		"Criar instance:" +
 		"Entrar (instance ja existe):" +
 		"Definir dificuldade:" +
-		"^FF0000[GM] Reset (destroy + recreate + enter)^000000:" +
 		"Sair"
 	);
 
@@ -58,7 +57,10 @@ alberta,214,74,4	script	Leticia#st	4_4JOB_LETICIA,{
 				mes "Apenas o lider da party pode criar.";
 				close;
 			}
-			// Cooldown 3 dias (259200s) — per-character.
+			// Cooldown 3 dias (259200s), per-character (#-scoped = account-wide).
+			// Stamp aplicado a TODOS membros online no momento do create
+			// (nao no complete) — assim ninguem dribla destruindo a instance
+			// cedo e recriando em outra party.
 			if (#SunkenTower_LastRun + 259200 > gettimetick(2)) {
 				.@rem = (#SunkenTower_LastRun + 259200) - gettimetick(2);
 				.@h = .@rem / 3600;
@@ -72,6 +74,63 @@ alberta,214,74,4	script	Leticia#st	4_4JOB_LETICIA,{
 				mes "Seu nivel esta fora da faixa permitida (40-175).";
 				close;
 			}
+
+			// Pre-check: todos os membros online da party precisam estar
+			// (a) fora do cooldown, e (b) dentro da faixa de level que
+			// permite split de EXP em party (party_share_level=15 em
+			// conf/inter_athena.conf). Mesma regra evita exploit de criar
+			// instance com leader fraco e clearar com chars fortes pra
+			// farmar Booster Coin.
+			//
+			// CRITICO: nada de `mes`/`close` enquanto qualquer attachrid
+			// estiver ativo — isso quebra o estado do dialog do clicker
+			// original (NPC fica aberto sem botao de fechar). Coletamos
+			// tudo no loop, depois decidimos a saida no RID original.
+			//
+			// Defesa extra: abre o dialog ANTES da pre-check loop pra
+			// estabelecer estado, e restaura RID explicitamente depois
+			// (detachrid sozinho nao garante volta ao clicker em algumas
+			// versoes do rAthena quando ha attachrid em cadeia).
+			mes "[Leticia]";
+			mes "Verificando a party...";
+			.@pid = getcharid(1);
+			.@self_aid = getcharid(3);
+			.@now = gettimetick(2);
+			.@share_max = 15;  // mantenha em sync com conf/inter_athena.conf:party_share_level
+			.@min_lvl = BaseLevel;
+			.@max_lvl = BaseLevel;
+			.@cd_blocked$ = "";
+			getpartymember .@pid, 2;  // $@partymemberaid
+			.@pcount = $@partymembercount;
+			for (.@i = 0; .@i < .@pcount; .@i++) {
+				.@aid = $@partymemberaid[.@i];
+				if (.@aid == 0 || .@aid == .@self_aid) continue;
+				if (!attachrid(.@aid)) continue;  // offline — pula
+				if (.@cd_blocked$ == ""
+				    && #SunkenTower_LastRun + 259200 > .@now) {
+					.@cd_blocked$ = strcharinfo(0);
+				}
+				if (BaseLevel < .@min_lvl) .@min_lvl = BaseLevel;
+				if (BaseLevel > .@max_lvl) .@max_lvl = BaseLevel;
+				detachrid;
+			}
+			// Belt + suspenders: garante volta ao clicker antes de
+			// qualquer mes/close adicional.
+			attachrid(.@self_aid);
+			if (.@cd_blocked$ != "") {
+				mes " ";
+				mes .@cd_blocked$ + " ainda esta em cooldown.";
+				mes "Aguarde ate todos os membros estarem livres.";
+				close;
+			}
+			if (.@max_lvl - .@min_lvl > .@share_max) {
+				mes " ";
+				mes "A diferenca de nivel entre os membros e maior que " + .@share_max + ".";
+				mes "Levels online: " + .@min_lvl + " - " + .@max_lvl + ".";
+				mes "Reorganize a party para que todos compartilhem a mesma faixa.";
+				close;
+			}
+
 			SunkenTower_Rank = .@rank;
 			if (SunkenTower_Difficulty < 1 || SunkenTower_Difficulty > 5)
 				SunkenTower_Difficulty = 1;
@@ -85,9 +144,25 @@ alberta,214,74,4	script	Leticia#st	4_4JOB_LETICIA,{
 				mes "Falha ao criar instance.";
 				close;
 			}
-			mes "[Leticia]";
+
+			// Stamp cooldown em TODOS membros online (incluindo o leader).
+			// Membros offline nao sao stampados — eles nao usaram a instance,
+			// o cooldown deles avanca normal e so trava se entrarem em
+			// proxima party que tente recriar.
+			#SunkenTower_LastRun = .@now;
+			for (.@i = 0; .@i < .@pcount; .@i++) {
+				.@aid = $@partymemberaid[.@i];
+				if (.@aid == 0 || .@aid == .@self_aid) continue;
+				if (!attachrid(.@aid)) continue;
+				#SunkenTower_LastRun = .@now;
+				detachrid;
+			}
+			attachrid(.@self_aid);  // restaura RID antes do mes final
+
+			mes " ";
 			mes "Instance criada. Rank: " + .@rank + ".";
 			mes "Dificuldade: " + SunkenTower_Difficulty + ".";
+			mes "Cooldown de 3 dias aplicado a todos os membros.";
 			mes "Quando estiver pronto, clique 'Entrar'.";
 			close;
 
@@ -138,31 +213,6 @@ alberta,214,74,4	script	Leticia#st	4_4JOB_LETICIA,{
 			close;
 
 		case 4:
-			// GM Reset — destrói instance atual, recria, entra (atalho de teste)
-			if (getgroupid() < 99) {
-				mes "[Leticia]";
-				mes "Apenas GMs.";
-				close;
-			}
-			.@old = instance_id(IM_PARTY);
-			if (.@old > 0) instance_destroy(.@old);
-			.@rank = callfunc("sunken_tower_rank", BaseLevel);
-			if (.@rank < 0) .@rank = 0;
-			SunkenTower_Rank = .@rank;
-			if (SunkenTower_Difficulty < 1 || SunkenTower_Difficulty > 5)
-				SunkenTower_Difficulty = 1;
-			$@ST_pending_rank = .@rank;
-			$@ST_pending_diff = SunkenTower_Difficulty;
-			.@ins = instance_create("Sunken Tower");
-			if (.@ins < 0) {
-				mes "[Leticia]";
-				mes "Falha ao criar instance.";
-				close;
-			}
-			instance_enter("Sunken Tower");
-			end;
-
-		case 5:
 			close;
 	}
 }
@@ -408,6 +458,17 @@ OnMobDead:
 	if (Hp <= 0) {
 		mes "[Dimensional Device]";
 		mes "Voce esta morto. Reviva antes de avancar.";
+		close;
+	}
+
+	// Apenas o lider avanca. Sem essa guard, non-leader caia no loop
+	// attachrid (~linha 470) pra distribuir reward pros outros players,
+	// e attachrid em outros PCs a partir de contexto non-GM congela o
+	// clicker. Saida limpa via close evita o freeze.
+	if (!is_party_leader()) {
+		mes "[Dimensional Device]";
+		mes "Apenas o lider da party pode avancar.";
+		mes "A recompensa do floor sera dada a todos.";
 		close;
 	}
 
