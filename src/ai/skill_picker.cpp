@@ -5,11 +5,13 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 
 #include <ryml.hpp>
 
+#include <common/ai_packets.hpp>
 #include <common/malloc.hpp>
 #include <common/random.hpp>
 #include <common/showmsg.hpp>
@@ -19,6 +21,36 @@ namespace rathena::server_ai {
 namespace {
 
 std::unordered_map<uint16, skill_rotation> g_rotations;
+
+/// Phase 5 — name → AI_ST_* bit lookup. Case-insensitive (parser
+/// lowercases the YAML cond_value before lookup). MVP set; add bits to
+/// ai_packets.hpp + new entries here when extending.
+const std::unordered_map<std::string, uint32> g_status_bit = {
+	{ "stone",      AI_ST_STONE },
+	{ "freeze",     AI_ST_FREEZE },
+	{ "stun",       AI_ST_STUN },
+	{ "sleep",      AI_ST_SLEEP },
+	{ "silence",    AI_ST_SILENCE },
+	{ "curse",      AI_ST_CURSE },
+	{ "confusion",  AI_ST_CONFUSION },
+	{ "blind",      AI_ST_BLIND },
+	{ "poison",     AI_ST_POISON },
+	{ "bleeding",   AI_ST_BLEEDING },
+	{ "hiding",     AI_ST_HIDING },
+	{ "cloaking",   AI_ST_CLOAKING },
+	{ "endure",     AI_ST_ENDURE },
+	{ "provoke",    AI_ST_PROVOKE },
+	{ "autoguard",  AI_ST_AUTOGUARD },
+	{ "increase_agi", AI_ST_INC_AGI },
+	{ "inc_agi",    AI_ST_INC_AGI },
+};
+
+static uint32 status_name_to_bit(const std::string& name){
+	std::string lc = name;
+	for (char& c : lc) c = (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+	auto it = g_status_bit.find(lc);
+	return (it == g_status_bit.end()) ? 0u : it->second;
+}
 
 const std::unordered_map<std::string, skill_cond> g_cond_table = {
 	{ "always",               skill_cond::ALWAYS },
@@ -187,11 +219,32 @@ static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
 		case skill_cond::ENEMY_COUNT_NEARBY: return ctx.enemy_count_nearby >= e.cond_value_num;
 		case skill_cond::ALLY_COUNT_NEARBY: return ctx.ally_count_nearby  >= e.cond_value_num;
 		case skill_cond::MAP_ZONE:         return ctx.map_zone == e.cond_value_num;
-		// Phase 2 stubs: pass-through. Phase 3 wires REPORT extensions.
-		case skill_cond::ENEMY_STATUS:
-		case skill_cond::NOT_ENEMY_STATUS:
-		case skill_cond::SELF_STATUS:
-		case skill_cond::NOT_SELF_STATUS:
+		// Phase 5 — wire status conditions against the AI_ST_* bitmask
+		// from REPORT. Names that don't resolve (status not yet in the
+		// MVP set) fall through with the safe default of "not asserted".
+		case skill_cond::ENEMY_STATUS: {
+			if (!ctx.has_target) return false;
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return false; // unknown name → never matches
+			return (ctx.target_statuses & bit) != 0;
+		}
+		case skill_cond::NOT_ENEMY_STATUS: {
+			if (!ctx.has_target) return true; // no target → can't be statused
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return true; // unknown name → assume "not present"
+			return (ctx.target_statuses & bit) == 0;
+		}
+		case skill_cond::SELF_STATUS: {
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return false;
+			return (ctx.self_statuses & bit) != 0;
+		}
+		case skill_cond::NOT_SELF_STATUS: {
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return true;
+			return (ctx.self_statuses & bit) == 0;
+		}
+		// Phase 3 stubs (ally tracking not in REPORT yet).
 		case skill_cond::ALLY_STATUS:
 		case skill_cond::NOT_ALLY_STATUS:
 		case skill_cond::ALLY_HP_BELOW:

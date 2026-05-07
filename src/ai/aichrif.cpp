@@ -79,6 +79,10 @@ struct shell_state {
 	// Phase 5 — death/respawn.
 	t_tick respawn_at_tick; // 0 = alive; gettick()+delay = scheduled respawn.
 	shell_init_snapshot init_snap;
+	// Phase 5 — last-seen status bitmask (AI_ST_*) on self. Populated from
+	// PACKET_AI_SHELL_REPORT. Per-enemy statuses are inside `enemies[]` so
+	// no separate field is needed for those.
+	uint32 self_statuses;
 	uint32 last_attacker;   // most recent ATTACKED_BY actor_id
 };
 std::vector<shell_state> g_shells_local;
@@ -421,9 +425,10 @@ static int32 aichrif_parse_report(int32 fd){
 		s.hp = p->hp; s.max_hp = p->max_hp;
 		s.sp = p->sp; s.max_sp = p->max_sp;
 		s.target_id = p->target_id;
+		s.self_statuses = p->self_statuses;	// Phase 5
 		s.enemy_count = (p->enemy_count > AI_REPORT_MAX_ENEMIES) ? AI_REPORT_MAX_ENEMIES : p->enemy_count;
 		for (uint8 i = 0; i < s.enemy_count; i++)
-			s.enemies[i] = p->enemies[i];
+			s.enemies[i] = p->enemies[i];	// row-level statuses ride along
 		s.last_report_tick = gettick();
 	}
 	RFIFOSKIP(fd, p->len);
@@ -757,6 +762,9 @@ static TIMER_FUNC(aichrif_combat_timer){
 			ctx.enemy_count_nearby = s.enemy_count;
 			ctx.map_zone = (uint8)((s.cat == spawn_category::TOWN) ? 1
 				: (s.cat == spawn_category::FIELD) ? 2 : 3);
+			// Phase 5 — feed SC bitmasks for SELF_STATUS / ENEMY_STATUS.
+			ctx.self_statuses   = s.self_statuses;
+			ctx.target_statuses = s.enemies[idx].statuses;
 			pick = skill_picker_choose(*rot, ctx, &s.skill_cursor);
 		}
 		if (pick != nullptr && !pick->skill_name.empty()) {

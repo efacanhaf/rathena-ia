@@ -344,6 +344,32 @@ struct enemy_scan_ctx {
 };
 }
 
+/// Phase 5 — pack the ~16 combat-relevant SCs of a bl into the AI_ST_*
+/// bitmask wire format. Returns 0 if the bl has no status_change attached.
+static uint32 ai_collect_statuses(block_list* bl){
+	if (bl == nullptr) return 0;
+	status_change* sc = status_get_sc(bl);
+	if (sc == nullptr) return 0;
+	uint32 m = 0;
+	if (sc->getSCE(SC_STONE) || sc->getSCE(SC_STONEWAIT)) m |= AI_ST_STONE;
+	if (sc->getSCE(SC_FREEZE))     m |= AI_ST_FREEZE;
+	if (sc->getSCE(SC_STUN))       m |= AI_ST_STUN;
+	if (sc->getSCE(SC_SLEEP))      m |= AI_ST_SLEEP;
+	if (sc->getSCE(SC_SILENCE))    m |= AI_ST_SILENCE;
+	if (sc->getSCE(SC_CURSE))      m |= AI_ST_CURSE;
+	if (sc->getSCE(SC_CONFUSION))  m |= AI_ST_CONFUSION;
+	if (sc->getSCE(SC_BLIND))      m |= AI_ST_BLIND;
+	if (sc->getSCE(SC_POISON) || sc->getSCE(SC_DPOISON)) m |= AI_ST_POISON;
+	if (sc->getSCE(SC_BLEEDING))   m |= AI_ST_BLEEDING;
+	if (sc->getSCE(SC_HIDING))     m |= AI_ST_HIDING;
+	if (sc->getSCE(SC_CLOAKING))   m |= AI_ST_CLOAKING;
+	if (sc->getSCE(SC_ENDURE))     m |= AI_ST_ENDURE;
+	if (sc->getSCE(SC_PROVOKE))    m |= AI_ST_PROVOKE;
+	if (sc->getSCE(SC_AUTOGUARD))  m |= AI_ST_AUTOGUARD;
+	if (sc->getSCE(SC_INCREASEAGI)) m |= AI_ST_INC_AGI;
+	return m;
+}
+
 /// va_list callback for map_foreachinrange. Picks BL_MOB only; insertion-sort
 /// by chebyshev distance into a fixed-size top-N table.
 static int32 ai_report_collect_mob(block_list* bl, va_list ap){
@@ -370,6 +396,7 @@ static int32 ai_report_collect_mob(block_list* bl, va_list ap){
 	row.x = (uint16)bl->x;
 	row.y = (uint16)bl->y;
 	row.distance = dist;
+	row.statuses = ai_collect_statuses(bl);  // Phase 5 — SC bitmask
 
 	// insert keeping ascending distance order; cap at AI_REPORT_MAX_ENEMIES.
 	uint8 i = ctx->count;
@@ -441,6 +468,7 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 	p.sp = (uint32)sd->battle_status.sp;
 	p.max_sp = (uint32)sd->battle_status.max_sp;
 	p.target_id = (uint32)sd->ud.target;
+	p.self_statuses = ai_collect_statuses(const_cast<map_session_data*>(sd)); // Phase 5
 	p.enemy_count = ctx.count;
 	for (uint8 i = 0; i < ctx.count; i++)
 		p.enemies[i] = ctx.rows[i];

@@ -89,6 +89,9 @@ struct shell_ctx {
 	uint8  enemy_count_nearby = 0;
 	uint8  ally_count_nearby = 0;
 	uint8  map_zone = 0; // 1=town,2=field,3=dungeon (Phase 3)
+	// Phase 5 — bitmasks of AI_ST_* (defined in common/ai_packets.hpp).
+	uint32 self_statuses = 0;
+	uint32 target_statuses = 0;
 };
 
 /// Pick the next skill from the rotation that passes its condition gate

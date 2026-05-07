@@ -136,6 +136,27 @@ struct PACKET_AI_SHELL_SPAWNED_S {
 	uint8  err;
 };
 
+/// Phase 5 — status bitmask used in REPORT for self + each NEARBY_ENEMY.
+/// 16 combat-relevant SCs. skill_picker maps SC names from YAML to these
+/// bits and evaluates SELF_STATUS / ENEMY_STATUS conditions against them.
+/// Bits 16..31 reserved for future expansion (buff line, song line, etc).
+constexpr uint32 AI_ST_STONE     = 1u << 0;
+constexpr uint32 AI_ST_FREEZE    = 1u << 1;
+constexpr uint32 AI_ST_STUN      = 1u << 2;
+constexpr uint32 AI_ST_SLEEP     = 1u << 3;
+constexpr uint32 AI_ST_SILENCE   = 1u << 4;
+constexpr uint32 AI_ST_CURSE     = 1u << 5;
+constexpr uint32 AI_ST_CONFUSION = 1u << 6;
+constexpr uint32 AI_ST_BLIND     = 1u << 7;
+constexpr uint32 AI_ST_POISON    = 1u << 8;
+constexpr uint32 AI_ST_BLEEDING  = 1u << 9;
+constexpr uint32 AI_ST_HIDING    = 1u << 10;
+constexpr uint32 AI_ST_CLOAKING  = 1u << 11;
+constexpr uint32 AI_ST_ENDURE    = 1u << 12;
+constexpr uint32 AI_ST_PROVOKE   = 1u << 13;
+constexpr uint32 AI_ST_AUTOGUARD = 1u << 14;
+constexpr uint32 AI_ST_INC_AGI   = 1u << 15;
+
 /// One row in PACKET_AI_SHELL_REPORT.enemies[]. mob_class kept for
 /// behavior-side mob_db lookups; distance pre-computed on map side.
 struct PACKET_AI_NEARBY_ENEMY {
@@ -144,6 +165,8 @@ struct PACKET_AI_NEARBY_ENEMY {
 	uint16 hp_pct;      // 0..100
 	uint16 x, y;
 	uint8  distance;    // chebyshev cells
+	uint8  pad;
+	uint32 statuses;    // Phase 5 — bitmask of AI_ST_* on this enemy
 };
 
 constexpr uint8 AI_REPORT_MAX_ENEMIES = 8;
@@ -178,6 +201,7 @@ struct PACKET_AI_SHELL_REPORT_S {
 	uint32 hp, max_hp;
 	uint32 sp, max_sp;
 	uint32 target_id;   // 0 = no target
+	uint32 self_statuses; // Phase 5 — bitmask of AI_ST_* on the shell itself
 	uint8  enemy_count; // 0..AI_REPORT_MAX_ENEMIES
 	uint8  pad[3];
 	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
