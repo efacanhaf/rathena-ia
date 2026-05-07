@@ -13,6 +13,13 @@
 # after pc_authok. Final HP/SP/Atk/Hit/Flee/Def/MAtk/MDef are derived from
 # class formulas + equipped items, NOT hardcoded here.
 #
+# Phase 5 — Equipment slots accept EITHER a single nameid (current
+# behavior) or a YAML sequence (gear pool, random pick per spawn):
+#   Weapon: 1158
+#   Weapon: [1158, 1162, 1170]
+# Use 0 in a sequence to mean "no item in that slot" — useful for slots
+# that should be empty for some shells (e.g. shield: [1102, 0]).
+#
 # Equipment IDs mirror what the Mega Booster Support NPC
 # (npc/custom/dro_starter_kit.txt) hands to real players, so a shell is
 # stat-equivalent to a player who just collected the kit.
@@ -127,7 +134,10 @@ Body:
       Dex: 22
       Luk: 10
       Equip: { Weapon: 1106, Armor: 2305 }   # Falchion + Adventurer Suit
-  - Job: 7  # Knight
+  - Job: 7  # Knight — gear pools demo (Phase 5).
+    # Any Equip slot accepts either a scalar (one nameid) or a sequence
+    # (random pick at spawn time). Below: T1 Knights spawn with one of 3
+    # one-handed swords; T2 with one of 4 two-handers + maybe a shield.
     T1:
       BaseLevel: 65
       JobLevel: 45
@@ -137,7 +147,13 @@ Body:
       Int: 10
       Dex: 40
       Luk: 15
-      Equip: { Weapon: 1158, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+      Equip:
+        Weapon: [1158, 1162, 1170]   # Tsurugi / Haedonggum / Saber
+        HandL: [2102, 2105, 0]       # Buckler / Stone Buckler / no shield
+        Armor: 2310
+        Garment: 2503
+        Shoes: 2403
+        AccR: 2604
     T2:
       BaseLevel: 95
       JobLevel: 60
@@ -147,7 +163,12 @@ Body:
       Int: 20
       Dex: 65
       Luk: 25
-      Equip: { Weapon: 1158, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+      Equip:
+        Weapon: [1158, 1163, 1167, 1171]   # mixed 1H/2H — Tsurugi / Flamberge / Claymore / Bastard Sword
+        Armor: 2310
+        Garment: 2503
+        Shoes: 2403
+        AccR: 2604
   - Job: 4008  # Lord Knight
     T1:
       BaseLevel: 75

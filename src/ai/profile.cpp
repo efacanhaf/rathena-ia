@@ -8,15 +8,29 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <ryml.hpp>
 
 #include <common/malloc.hpp>
+#include <common/random.hpp>
 #include <common/showmsg.hpp>
 
 namespace rathena::server_ai {
 
 namespace {
+
+/// Phase 5 storage variant: stats are still single values, but each
+/// equip slot can hold a pool of nameids. profile_get() rolls one per
+/// call so visually-distinct shells of the same job spawn from the same
+/// (job,tier) entry. Pool of size 1 = behaves exactly like the old
+/// scalar profile.
+struct ai_profile_pools {
+	uint16 base_level = 0, job_level = 0;
+	uint16 str = 0, agi = 0, vit = 0, int_ = 0, dex = 0, luk = 0;
+	uint16 speed = 0;
+	std::vector<uint32> equip[AI_EQ_COUNT];
+};
 
 // Hardcoded floor — used when both per-job and Defaults entries are missing.
 // Stats only; equipment defaults to empty so status_calc_pc treats the shell
@@ -30,8 +44,44 @@ const ai_profile k_floor[3] = {
 	{ 90, 60, 80, 65, 65, 50, 80, 35, 150, {0,0,0,0,0,0,0,0,0,0} },
 };
 
-std::array<ai_profile, 3> g_defaults = {{ k_floor[0], k_floor[1], k_floor[2] }};
-std::unordered_map<uint64, ai_profile> g_table; // key = (job << 8) | tier
+std::array<ai_profile_pools, 3> g_defaults_pools;
+std::unordered_map<uint64, ai_profile_pools> g_table; // key = (job << 8) | tier
+
+/// Materialize a pool entry into the wire-format ai_profile by rolling
+/// each pool slot (or copying scalar slots) and overlaying stats.
+ai_profile pools_to_profile(const ai_profile_pools& src){
+	ai_profile out{};
+	out.base_level = src.base_level;
+	out.job_level  = src.job_level;
+	out.str = src.str; out.agi = src.agi; out.vit = src.vit;
+	out.int_ = src.int_; out.dex = src.dex; out.luk = src.luk;
+	out.speed = src.speed;
+	for (int i = 0; i < AI_EQ_COUNT; i++) {
+		const auto& pool = src.equip[i];
+		if (pool.empty()) {
+			out.equip[i] = 0;
+		} else if (pool.size() == 1) {
+			out.equip[i] = pool[0];
+		} else {
+			out.equip[i] = pool[rnd() % pool.size()];
+		}
+	}
+	return out;
+}
+
+/// Initialize defaults_pools from the hardcoded floors (single-element pools).
+void seed_defaults(){
+	for (int t = 0; t < 3; t++) {
+		ai_profile_pools& dp = g_defaults_pools[t];
+		dp.base_level = k_floor[t].base_level;
+		dp.job_level  = k_floor[t].job_level;
+		dp.str = k_floor[t].str; dp.agi = k_floor[t].agi;
+		dp.vit = k_floor[t].vit; dp.int_ = k_floor[t].int_;
+		dp.dex = k_floor[t].dex; dp.luk = k_floor[t].luk;
+		dp.speed = k_floor[t].speed;
+		for (int i = 0; i < AI_EQ_COUNT; i++) dp.equip[i].clear();
+	}
+}
 
 uint64 key(uint16 job, uint8 tier){ return ((uint64)job << 8) | tier; }
 
@@ -44,7 +94,34 @@ void read_field(const ryml::NodeRef& n, const char* k, T& dst){
 	dst = (T)v;
 }
 
-void read_equip(const ryml::NodeRef& parent, ai_profile& p){
+/// Read an Equip slot entry that's either:
+///   Weapon: 1158                    # scalar -> pool of size 1
+///   Weapon: [1158, 1162, 1170]      # sequence -> pool of size N
+/// Anything else is ignored.
+void read_slot_pool(const ryml::NodeRef& c, std::vector<uint32>& pool){
+	if (c.valid() == false) return;
+	if (c.has_val()) {
+		int64 v = 0;
+		c >> v;
+		if (v > 0) {
+			pool.clear();
+			pool.push_back((uint32)v);
+		}
+		return;
+	}
+	if (c.is_seq()) {
+		std::vector<uint32> tmp;
+		for (const auto& it : c) {
+			if (!it.has_val()) continue;
+			int64 v = 0;
+			it >> v;
+			if (v > 0) tmp.push_back((uint32)v);
+		}
+		if (!tmp.empty()) pool = std::move(tmp);
+	}
+}
+
+void read_equip(const ryml::NodeRef& parent, ai_profile_pools& p){
 	auto eq = parent.find_child(c4::to_csubstr("Equip"));
 	if (eq.valid() == false || !eq.is_map()) return;
 	struct slot_name { const char* name; ai_equip_slot slot; };
@@ -64,14 +141,11 @@ void read_equip(const ryml::NodeRef& parent, ai_profile& p){
 	};
 	for (const auto& n : names) {
 		auto c = eq.find_child(c4::to_csubstr(n.name));
-		if (c.valid() == false || !c.has_val()) continue;
-		int64 v = 0;
-		c >> v;
-		if (v > 0) p.equip[n.slot] = (uint32)v;
+		read_slot_pool(c, p.equip[n.slot]);
 	}
 }
 
-void read_tier(const ryml::NodeRef& n, ai_profile& p){
+void read_tier(const ryml::NodeRef& n, ai_profile_pools& p){
 	read_field(n, "BaseLevel", p.base_level);
 	read_field(n, "JobLevel",  p.job_level);
 	read_field(n, "Str", p.str);
@@ -87,7 +161,7 @@ void read_tier(const ryml::NodeRef& n, ai_profile& p){
 }
 
 bool profile_load(const char* yaml_path){
-	g_defaults = {{ k_floor[0], k_floor[1], k_floor[2] }};
+	seed_defaults();
 	g_table.clear();
 
 	FILE* f = fopen(yaml_path, "rb");
@@ -119,7 +193,7 @@ bool profile_load(const char* yaml_path){
 		const char* names[3] = { "T0", "T1", "T2" };
 		for (int32 t = 0; t < 3; t++) {
 			auto tn = def.find_child(c4::to_csubstr(names[t]));
-			if (tn.valid()) read_tier(tn, g_defaults[t]);
+			if (tn.valid()) read_tier(tn, g_defaults_pools[t]);
 		}
 	}
 
@@ -137,9 +211,9 @@ bool profile_load(const char* yaml_path){
 			for (int32 t = 0; t < 3; t++) {
 				auto tn = jn.find_child(c4::to_csubstr(names[t]));
 				if (tn.valid() == false) continue;
-				ai_profile p = g_defaults[t]; // start from defaults, overlay overrides
+				ai_profile_pools p = g_defaults_pools[t]; // overlay
 				read_tier(tn, p);
-				g_table[key(job, (uint8)t)] = p;
+				g_table[key(job, (uint8)t)] = std::move(p);
 				tier_count++;
 			}
 		}
@@ -150,20 +224,21 @@ bool profile_load(const char* yaml_path){
 	return true;
 }
 
-const ai_profile& profile_get(uint16 job, uint8 tier){
+ai_profile profile_get(uint16 job, uint8 tier){
 	if (tier > 2) tier = 2;
 	// Exact (job, tier) match wins.
 	auto it = g_table.find(key(job, tier));
-	if (it != g_table.end()) return it->second;
-	// Fall back to another tier of the same job before Defaults — keeps the
-	// equip slots class-appropriate (Knight T0 uses Knight T1 gear instead
-	// of class-agnostic Defaults that skip the spawn for missing weapon).
+	if (it != g_table.end()) return pools_to_profile(it->second);
+	// Fall back to another tier of the same job before Defaults — keeps
+	// the equip slots class-appropriate (Knight T0 uses Knight T1 gear
+	// instead of class-agnostic Defaults that skip the spawn for missing
+	// weapon).
 	for (uint8 alt = 0; alt < 3; alt++) {
 		if (alt == tier) continue;
 		auto a = g_table.find(key(job, alt));
-		if (a != g_table.end()) return a->second;
+		if (a != g_table.end()) return pools_to_profile(a->second);
 	}
-	return g_defaults[tier];
+	return pools_to_profile(g_defaults_pools[tier]);
 }
 
 }

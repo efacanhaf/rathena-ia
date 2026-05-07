@@ -42,7 +42,13 @@ bool profile_load(const char* yaml_path);
 /// Look up profile by (job, tier). tier is clamped to [0,2]. Falls back to
 /// the Defaults entry if (job, tier) wasn't defined; if defaults are missing
 /// too, returns a hardcoded floor.
-const ai_profile& profile_get(uint16 job, uint8 tier);
+///
+/// Phase 5 — equipment slots that have a pool (YAML sequence) are rolled
+/// per-call, so two consecutive calls for the same (job,tier) can return
+/// different equip[] arrays. Stats and pool-less slots are deterministic.
+/// Returned by value so a re-roll between calls can't invalidate a
+/// previously-held reference.
+ai_profile profile_get(uint16 job, uint8 tier);
 
 }
 
