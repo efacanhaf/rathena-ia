@@ -39,3 +39,45 @@
 Header:
   Type: PLAYER_GROUP_DB
   Version: 1
+
+Body:
+  # Extend Admin with dev-useful #charcommands. Stock conf/groups.yml only
+  # gives Admin the tiny CharCommands list it inherits from Support
+  # (item/zeny/disguise/undisguise/size). all_commands covers @-prefix only;
+  # there's no equivalent all_charcommands flag.
+  #
+  # parseCommands rejects the entire block if any name doesn't match a real
+  # atcommand — every entry below was verified against doc/atcommands.txt.
+  - Id: 99
+    CharCommands:
+      blvl: true
+      jlvl: true
+      stpoint: true
+      skpoint: true
+      jobchange: true
+      allskill: true
+      heal: true
+      warp: true
+      go: true
+      stats: true
+      option: true
+      effect: true
+      kill: true
+      killable: true
+      mute: true
+      jail: true
+      unjail: true
+      mount: true
+      reset: true
+      resetstat: true
+      resetskill: true
+      changesex: true
+      changecharsex: true
+      petrename: true
+      recall: true
+      recallall: true
+      save: true
+      disguise: true
+      kami: true
+      kamib: true
+      kamic: true
