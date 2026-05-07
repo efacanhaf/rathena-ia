@@ -1,34 +1,101 @@
 //===== DimensionsRO ==========================================
-//= Adventurer Starter Kit
+//= Adventurer Starter Kit + Level Up Ticket Redeem
 //===== Description: =========================================
-//= Welcome NPC. Entrega 1x Booster Call Package (101538) por char.
-//= Flag: DRO_STARTER_TAKEN.
+//= Welcome NPC.
+//=  - Entrega 1x Booster Call Package (101538/103048 VIP) por char
+//=    (flag DRO_STARTER_TAKEN).
+//=  - Resgata Level Up Tickets que dropam dos Booster Boxes:
+//=     Lv_Up_T_80  (1000989) — valido 80 <= BaseLevel <= 89
+//=     Lv_Up_T_90  (1000990) — valido 90 <= BaseLevel <= 98
+//=     Lv_Up_T_150 (1000991) — valido 150 <= BaseLevel <= 169
+//=    Cada ticket consumido sobe +1 BaseLevel (getexp2, ignora exp_rate).
 //============================================================
 
 prt_in,37,95,4	script	Mega Booster Support#dro	4_M_ALCHE_A,{
 	mes "[Mega Booster Support]";
 	mes "Welcome to DimensionsRO!";
-
-	if (DRO_STARTER_TAKEN) {
-		mes "Voce ja pegou seu kit inicial.";
-		close;
-	}
-
-	if (checkweight(501, 1) == 0 || (MaxWeight - Weight) < 1000) {
-		mes "Inventario muito cheio. Volta mais leve.";
-		close;
-	}
-
 	next;
-	if (select("Pegar Booster box:Cancelar") != 1) close;
 
-	if (vip_status(VIP_STATUS_ACTIVE))
-		getitem 103048, 1;
-	else
-		getitem 101538, 1;
-	set DRO_STARTER_TAKEN, 1;
+	switch (select(
+		(DRO_STARTER_TAKEN ? "" : "Pegar Booster box") + ":" +
+		"Resgatar Level Up Ticket:Cancelar")) {
 
-	mes "[Mega Booster Support]";
-	mes "Pronto! Boa cacada.";
-	close;
+	case 1:
+		// Starter Booster Box (1x por char)
+		if (DRO_STARTER_TAKEN) {
+			mes "[Mega Booster Support]";
+			mes "Voce ja pegou seu kit inicial.";
+			close;
+		}
+		if (checkweight(501, 1) == 0 || (MaxWeight - Weight) < 1000) {
+			mes "[Mega Booster Support]";
+			mes "Inventario muito cheio. Volta mais leve.";
+			close;
+		}
+		if (vip_status(VIP_STATUS_ACTIVE))
+			getitem 103048, 1;
+		else
+			getitem 101538, 1;
+		set DRO_STARTER_TAKEN, 1;
+		mes "[Mega Booster Support]";
+		mes "Pronto! Boa cacada.";
+		close;
+
+	case 2:
+		// Level Up Ticket: 1 ticket = +1 BaseLevel, dentro da faixa.
+		if (BaseLevel >= 80 && BaseLevel <= 89) {
+			.@ticket = 1000989;	// Lv_Up_T_80
+			.@range$ = "80~89";
+		} else if (BaseLevel >= 90 && BaseLevel <= 98) {
+			.@ticket = 1000990;	// Lv_Up_T_90
+			.@range$ = "90~98";
+		} else if (BaseLevel >= 150 && BaseLevel <= 169) {
+			.@ticket = 1000991;	// Lv_Up_T_150
+			.@range$ = "150~169";
+		} else {
+			mes "[Mega Booster Support]";
+			mes "Os Level Up Tickets so funcionam dentro de faixas:";
+			mes "  ^0055FF80~89^000000  (Lv Up Ticket 80)";
+			mes "  ^0055FF90~98^000000  (Lv Up Ticket 90)";
+			mes "  ^0055FF150~169^000000 (Lv Up Ticket 150)";
+			mes "Seu BaseLevel ("+BaseLevel+") esta fora dessas faixas.";
+			close;
+		}
+
+		if (countitem(.@ticket) < 1) {
+			mes "[Mega Booster Support]";
+			mes "Voce nao tem o ticket certo pra sua faixa de level.";
+			mes "Faixa atual: ^0055FF"+.@range$+"^000000.";
+			mes "Procura nos Booster Boxes.";
+			close;
+		}
+
+		mes "[Mega Booster Support]";
+		mes "Voce esta na faixa ^0055FF"+.@range$+"^000000 com "+countitem(.@ticket)+" ticket(s).";
+		mes "Cada ticket sobe +1 nivel.";
+		next;
+		if (select("Usar 1 ticket (+1 lvl):Cancelar") != 1) close;
+
+		// Re-check ownership (paranoia: scripts de outros NPCs nao deveriam
+		// rodar entre o select e aqui, mas se o player abriu storage por
+		// algum motivo, prefiro falhar fechado a dar level de graca).
+		if (countitem(.@ticket) < 1) {
+			mes "[Mega Booster Support]";
+			mes "Cade o ticket?";
+			close;
+		}
+
+		.@need = NextBaseExp - BaseExp + 1;
+		if (.@need < 1) .@need = 1;
+		delitem .@ticket, 1;
+		getexp2 .@need, 0;
+
+		mes "[Mega Booster Support]";
+		mes "Pronto! BaseLevel agora: ^0055FF"+BaseLevel+"^000000.";
+		close;
+
+	case 3:
+	default:
+		close;
+	}
 }

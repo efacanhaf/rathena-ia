@@ -6,6 +6,35 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-05-07
+
+### Mudado — Drop de Gold
+
+- **Tier comum (Dokebi, Mineral, Grand Peco, Mi Gao, Plasma, Miming, Pot Dofle, Cat o' Nine, Leib Olmai, Am Mut, Creepy Demon e variantes Solid/Ringleader/Furious/Elusive/coloridos):** drop de Gold subiu de 0,15% para **1,0%** (~6,7×). Vale também pros Mineral coloridos da Bio4.
+- **Golden Thief Bug** agora dropa Gold a **50%** (era 100% capado).
+- **Golden Savage** agora dropa Gold a **75%** (era 37,5%).
+- **Por quê:** craftar Lux Anima (3 Gold + 3 Light Granule) era gargalo só com a Aurora (paramk, 1M zeny, ~20/dia, fechado quarta). Agora dá pra farmar.
+
+### Adicionado — Resgate de Level Up Tickets
+
+- A **Mega Booster Support** (prt_in 37,95) agora aceita os **Level Up Tickets** que saem dos Booster Boxes. Cada ticket sobe **+1 BaseLevel** dentro da faixa correspondente:
+  - **Lv Up Ticket 80**: 80 ≤ BaseLevel ≤ 89
+  - **Lv Up Ticket 90**: 90 ≤ BaseLevel ≤ 98
+  - **Lv Up Ticket 150**: 150 ≤ BaseLevel ≤ 169
+- Fora da faixa o ticket não funciona (sem stacking gratuito acima do limite). Pode acumular tickets e usar 1 por vez.
+
+### Corrigido — Sunken Tower
+
+- **Dimensional Device não trava mais para membros não-líder.** Antes, quando um membro da party que não era o líder clicava no Device, o NPC abria o diálogo e ficava sem opção de fechar. Agora ele recebe uma mensagem informando que apenas o líder avança o floor, e o diálogo fecha normal.
+- **Cooldown de 3 dias agora é aplicado na criação da instance**, não na conclusão. Isso fecha o exploit de destruir a instance cedo pra resetar o cooldown. O cooldown é stampado em todos os membros online da party no momento em que o líder cria a instance com a Leticia.
+- **Verificação de level dos membros da party no momento da criação.** A diferença de Base Level entre membros online tem que ser compatível com a regra de split de EXP (≤15 levels). Se houver alguém fora da faixa, a Leticia bloqueia a criação. Fecha o exploit de criar com um líder de level baixo e ter chars fortes clearando os mobs.
+- Removida a opção de teste de GM do menu da Leticia.
+
+## 2026-05-06
+
+### Mudado
+- **Booster Box e Premium Booster Box agora podem ser abertas em qualquer level.** A restrição original de Base Level 10 foi removida — o jogador pode segurar a caixa até quando quiser antes de abrir.
+
 ## [1.0.0] — 2026-04-30 (atualizado 2026-05-06)
 
 ### Booster pack rework + ep17.1 lock + VIP lockdown (2026-05-06)

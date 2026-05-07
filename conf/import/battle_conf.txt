@@ -1,6 +1,13 @@
 // =============================================================================
 // DimensionsRO — battle config overrides (Phase 5 — drop & exp rate baseline)
 // =============================================================================
+
+// charcommand symbol: stock '#' is intercepted by the hexed DRO Ragexe
+// (treated as whisper prefix client-side, never reaches server). '!' goes
+// through.
+charcommand_symbol: !
+
+// =============================================================================
 // Philosophy: mid-rate baseline that leaves headroom for EXP/drop EVENTS
 // (weekend/anniversary boosts) without trivializing the grind.
 //
