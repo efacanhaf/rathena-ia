@@ -41,6 +41,12 @@ struct AI_Config {
 
 	char aiconf_name[256];				///< main conf path
 	char msgconf_name[256];				///< msg_conf path
+
+	// Phase 5 — death/respawn.
+	// On AI_EVT_DIED the shell schedules a respawn at its home location
+	// after this many milliseconds. Despawn+spawn pair is sent over chrif;
+	// the same shell_id/name/gear come back. 0 disables (shells stay dead).
+	uint32 respawn_delay_ms;
 };
 
 extern struct AI_Config ai_config;

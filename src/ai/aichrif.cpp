@@ -31,6 +31,24 @@ static ai_stats g_stats{};
 const ai_stats& aichrif_stats(){ return g_stats; }
 
 namespace {
+/// Phase 5 — owned snapshot of the spawn-time identity. Used to re-spawn the
+/// same shell after death without regenerating name/profile/equip.
+/// Strings are owned (std::string), so c_str() pointers stay valid as long
+/// as the snapshot lives in g_shells_local.
+struct shell_init_snapshot {
+	std::string name;
+	std::string map_name;
+	uint16 class_;
+	uint8  sex;
+	uint16 hair, hair_color, head_top, weapon;
+	uint16 x, y;
+	uint8  dir, behavior_id, tier;
+	uint16 base_level, job_level;
+	uint16 str_, agi_, vit_, int_, dex_, luk_;
+	uint16 speed;
+	uint32 equip[10];
+};
+
 struct shell_state {
 	uint32 shell_id;
 	uint16 job;            // for skill rotation lookup
@@ -58,6 +76,9 @@ struct shell_state {
 	uint8  patrol_count;    // ticks left on current direction
 	t_tick fleeing_until;   // gettick() < this → don't engage, run away
 	size_t skill_cursor;    // round-robin cursor into skill rotation
+	// Phase 5 — death/respawn.
+	t_tick respawn_at_tick; // 0 = alive; gettick()+delay = scheduled respawn.
+	shell_init_snapshot init_snap;
 	uint32 last_attacker;   // most recent ATTACKED_BY actor_id
 };
 std::vector<shell_state> g_shells_local;
@@ -233,6 +254,18 @@ int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init){
 	return 0;
 }
 
+int32 aichrif_send_despawn(int32 fd, uint32 shell_id, uint8 reason){
+	PACKET_AI_SHELL_DESPAWN_S p{};
+	p.cmd = PACKET_AI_SHELL_DESPAWN;
+	p.len = sizeof(p);
+	p.shell_id = shell_id;
+	p.reason = reason;
+	WFIFOHEAD(fd, sizeof(p));
+	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
+	WFIFOSET(fd, sizeof(p));
+	return 0;
+}
+
 int32 aichrif_send_ping(int32 fd){
 	static uint32 token = 0;
 	token++;
@@ -356,6 +389,13 @@ static int32 aichrif_parse_event(int32 fd){
 				g_stats.died_events++;
 				s.target_id = 0;
 				s.fleeing_until = 0;
+				// Phase 5 — schedule respawn at home if enabled. The actual
+				// despawn+spawn pair is emitted by tick_respawns() once the
+				// delay elapses; this just sets the alarm.
+				if (ai_config.respawn_delay_ms > 0) {
+					s.respawn_at_tick = gettick() + (t_tick)ai_config.respawn_delay_ms;
+					g_stats.respawns_scheduled++;
+				}
 				break;
 			case AI_EVT_RESURRECTED:
 				s.fleeing_until = 0;
@@ -587,6 +627,30 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		// overwrite on first SHELL_REPORT.
 		st.hp = 1;
 		st.max_hp = 1;
+		// Phase 5 — capture spawn-time identity for later respawn. We OWN
+		// the strings so the const char* fields in the synthesized
+		// ai_shell_init at respawn time stay valid until the snapshot is
+		// destructed.
+		st.init_snap.name      = nm;        // local buffer is fine — copied
+		st.init_snap.map_name  = t.map_name;
+		st.init_snap.class_    = init.class_;
+		st.init_snap.sex       = init.sex;
+		st.init_snap.hair      = init.hair;
+		st.init_snap.hair_color= init.hair_color;
+		st.init_snap.head_top  = init.head_top;
+		st.init_snap.weapon    = init.weapon;
+		st.init_snap.x         = init.x;
+		st.init_snap.y         = init.y;
+		st.init_snap.dir       = init.dir;
+		st.init_snap.behavior_id = init.behavior_id;
+		st.init_snap.tier      = init.tier;
+		st.init_snap.base_level= init.base_level;
+		st.init_snap.job_level = init.job_level;
+		st.init_snap.str_ = init.str_; st.init_snap.agi_ = init.agi_;
+		st.init_snap.vit_ = init.vit_; st.init_snap.int_ = init.int_;
+		st.init_snap.dex_ = init.dex_; st.init_snap.luk_ = init.luk_;
+		st.init_snap.speed = init.speed;
+		for (int es = 0; es < 10; es++) st.init_snap.equip[es] = init.equip[es];
 		g_shell_idx[sid] = g_shells_local.size();
 		g_shells_local.push_back(st);
 		g_spawn_within++;
@@ -752,6 +816,62 @@ static TIMER_FUNC(aichrif_drift_timer){
 	return 0;
 }
 
+/// Phase 5 — process scheduled respawns.
+///
+/// On AI_EVT_DIED, the event handler stamps `respawn_at_tick` with
+/// `now + respawn_delay_ms`. This timer scans for due alarms and emits a
+/// despawn+spawn pair using the captured init_snap. Map-server runs
+/// despawn synchronously (g_shells.erase) before reading the next packet
+/// from the same fd, so the SPAWN that follows finds a clean slate.
+static TIMER_FUNC(aichrif_respawn_timer){
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	for (auto& s : g_shells_local) {
+		if (s.respawn_at_tick == 0) continue;
+		if (now < s.respawn_at_tick) continue;
+
+		// 1. Tear the dead shell down on the map side.
+		aichrif_send_despawn(char_fd, s.shell_id, /*reason*/ 1 /*RESPAWN*/);
+
+		// 2. Re-spawn with the same identity. Strings live in the snapshot
+		// so the const char* fields stay valid through WFIFOSET().
+		ai_shell_init init{};
+		init.shell_id   = s.shell_id;
+		init.name       = s.init_snap.name.c_str();
+		init.class_     = s.init_snap.class_;
+		init.sex        = s.init_snap.sex;
+		init.hair       = s.init_snap.hair;
+		init.hair_color = s.init_snap.hair_color;
+		init.head_top   = s.init_snap.head_top;
+		init.weapon     = s.init_snap.weapon;
+		init.map_name   = s.init_snap.map_name.c_str();
+		init.x          = s.init_snap.x;
+		init.y          = s.init_snap.y;
+		init.dir        = s.init_snap.dir;
+		init.behavior_id= s.init_snap.behavior_id;
+		init.tier       = s.init_snap.tier;
+		init.base_level = s.init_snap.base_level;
+		init.job_level  = s.init_snap.job_level;
+		init.str_ = s.init_snap.str_; init.agi_ = s.init_snap.agi_;
+		init.vit_ = s.init_snap.vit_; init.int_ = s.init_snap.int_;
+		init.dex_ = s.init_snap.dex_; init.luk_ = s.init_snap.luk_;
+		init.speed = s.init_snap.speed;
+		for (int es = 0; es < 10; es++) init.equip[es] = s.init_snap.equip[es];
+		aichrif_send_shell_spawn(char_fd, init);
+
+		// 3. Reset transient state. cur_x/y get overwritten on next REPORT;
+		// hp seeds to max_hp == max_hp from snapshot would require status
+		// recalc, so just leave hp/max_hp untouched and let the first
+		// REPORT after respawn refresh them.
+		s.respawn_at_tick = 0;
+		s.target_id = 0;
+		s.fleeing_until = 0;
+		s.last_action_tick = now;
+		g_stats.respawns_sent++;
+	}
+	return 0;
+}
+
 /// Phase 3.6: real-clock day phase — 0 day (06-18), 1 evening (18-22),
 /// 2 night (22-06). Drives ambient probabilities so the population
 /// "breathes" with the time of day.
@@ -899,6 +1019,9 @@ void do_init_aichrif(void){
 	// Drift correction: pull town shells back home if they warped out.
 	add_timer_func_list(aichrif_drift_timer, "aichrif_drift");
 	add_timer_interval(gettick() + 60 * 1000, aichrif_drift_timer, 0, 0, 60 * 1000);
+	// Phase 5: respawn dead shells once respawn_delay_ms elapsed.
+	add_timer_func_list(aichrif_respawn_timer, "aichrif_respawn");
+	add_timer_interval(gettick() + 5 * 1000, aichrif_respawn_timer, 0, 0, 1000);
 	// Initial post-spawn warp from prontera to the intended target map.
 	add_timer_func_list(aichrif_initial_warp_timer, "aichrif_initial_warp");
 	add_timer_interval(gettick() + 2000, aichrif_initial_warp_timer, 0, 0, 500);

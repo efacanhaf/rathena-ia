@@ -51,6 +51,11 @@ struct ai_shell_init {
 };
 int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
 
+/// Phase 5 — tell map-server to remove a shell entirely (HP/inventory/etc
+/// gone). Used during scheduled respawn (followed by a fresh SPAWN with the
+/// same shell_id) and during shutdown wipes.
+int32 aichrif_send_despawn(int32 fd, uint32 shell_id, uint8 reason);
+
 /// Tell the map-server to walk a shell to (x, y).
 int32 aichrif_send_walk_to(int32 fd, uint32 shell_id, uint16 x, uint16 y);
 
@@ -86,6 +91,8 @@ struct ai_stats {
 	uint32 warps_drift;
 	uint32 attacked_by_events;
 	uint32 died_events;
+	uint32 respawns_scheduled;	// Phase 5 — DIED with respawn enabled
+	uint32 respawns_sent;		// Phase 5 — despawn+spawn pair emitted
 };
 const ai_stats& aichrif_stats();
 

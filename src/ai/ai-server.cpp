@@ -91,6 +91,9 @@ static void ai_set_defaults(void){
 	safestrncpy(ai_config.ai_passwd, "p1", NAME_LENGTH);
 	safestrncpy(ai_config.aiconf_name, AI_CONF_NAME, sizeof(ai_config.aiconf_name));
 	safestrncpy(ai_config.msgconf_name, AI_MSG_CONF_NAME, sizeof(ai_config.msgconf_name));
+	ai_config.respawn_delay_ms = 30000;	// 30s default — long enough to feel
+										// "real death", short enough that the
+										// population stays visibly active.
 }
 
 bool ai_config_read(const char* cfgName, bool normal){
@@ -120,6 +123,8 @@ bool ai_config_read(const char* cfgName, bool normal){
 			safestrncpy(ai_config.ai_userid, w2, NAME_LENGTH);
 		} else if (strcmpi(w1, "ai_passwd") == 0) {
 			safestrncpy(ai_config.ai_passwd, w2, NAME_LENGTH);
+		} else if (strcmpi(w1, "respawn_delay_ms") == 0) {
+			ai_config.respawn_delay_ms = (uint32)strtoul(w2, nullptr, 10);
 		} else if (strcmpi(w1, "import") == 0) {
 			ai_config_read(w2, false);
 		}
