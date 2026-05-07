@@ -43,3 +43,34 @@ Body:
     Ratio: 15000
   - Item: EP17_1_EVT02   # Mysterious Component (25669) — 150x nativo (mob Rate:10 → 15%)
     Ratio: 15000
+  - Item: Gold           # 969 — 100x nativo só no tier trash (0.01% → 1.0%).
+    Ratio: 10000         # GTB / Golden Savage / E_GOLDEN_BUG ficam no rate atual.
+    List:
+      DOKEBI: true
+      MAYA_PUPLE: true
+      AM_MUT: true
+      LEIB_OLMAI: true
+      CAT_O_NINE_TAIL: true
+      GRAND_PECO: true
+      INCREASE_SOIL: true
+      MINERAL: true
+      PLASMA_Y: true
+      COBALT_MINERAL: true
+      MIMING: true
+      POT_DOFLE: true
+      Q_INCREASE_SOIL: true
+      MA_TREASURE: true
+      C3_PLASMA_Y: true
+      C2_MINERAL: true
+      C3_MIMING: true
+      C2_LEIB_OLMAI: true
+      C5_INCREASE_SOIL: true
+      C2_GRAND_PECO: true
+      C3_GRAND_PECO: true
+      C4_DOKEBI: true
+      XM_LUDE: true
+      MIN_DOKEBI: true
+      MINERAL_G: true
+      MINERAL_R: true
+      MINERAL_W: true
+      MINERAL_P: true
