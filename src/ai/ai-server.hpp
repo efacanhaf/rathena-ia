@@ -47,6 +47,15 @@ struct AI_Config {
 	// after this many milliseconds. Despawn+spawn pair is sent over chrif;
 	// the same shell_id/name/gear come back. 0 disables (shells stay dead).
 	uint32 respawn_delay_ms;
+
+	// Phase 5 — verbosity gate for the AI_LOG(level, ...) macro:
+	//   0 = silent (errors/warnings still print via Show*)
+	//   1 = per-shell state (spawn ack, respawn fired, drift warp)
+	//   2 = combat decisions (target acquired, skill chosen)
+	//   3 = tick details
+	//   4 = packet level
+	//   5 = trace
+	uint32 debug_level;
 };
 
 extern struct AI_Config ai_config;

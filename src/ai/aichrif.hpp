@@ -5,9 +5,21 @@
 #define AI_CHRIF_HPP
 
 #include <common/cbasetypes.hpp>
+#include <common/showmsg.hpp>
+
+#include "ai-server.hpp"
 
 extern int32 char_fd;
 extern int32 aichrif_state;
+
+// Phase 5 — debug-level gated log macro. Enables ShowDebug only when
+// ai_config.debug_level >= `lvl`. Use sparingly:
+//   AI_LOG(1, "spawn ack id=%u", id);
+//   AI_LOG(2, "skill chosen: %s", name);
+// Levels are documented in ai-server.hpp::AI_Config::debug_level.
+#define AI_LOG(lvl, ...) do { \
+	if (ai_config.debug_level >= (uint32)(lvl)) ShowDebug(__VA_ARGS__); \
+} while (0)
 
 void do_init_aichrif(void);
 void do_final_aichrif(void);

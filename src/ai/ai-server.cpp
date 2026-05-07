@@ -94,6 +94,7 @@ static void ai_set_defaults(void){
 	ai_config.respawn_delay_ms = 30000;	// 30s default — long enough to feel
 										// "real death", short enough that the
 										// population stays visibly active.
+	ai_config.debug_level = 0;			// silent — flip to 1+ in conf to peek.
 }
 
 bool ai_config_read(const char* cfgName, bool normal){
@@ -125,6 +126,8 @@ bool ai_config_read(const char* cfgName, bool normal){
 			safestrncpy(ai_config.ai_passwd, w2, NAME_LENGTH);
 		} else if (strcmpi(w1, "respawn_delay_ms") == 0) {
 			ai_config.respawn_delay_ms = (uint32)strtoul(w2, nullptr, 10);
+		} else if (strcmpi(w1, "debug_level") == 0) {
+			ai_config.debug_level = (uint32)strtoul(w2, nullptr, 10);
 		} else if (strcmpi(w1, "import") == 0) {
 			ai_config_read(w2, false);
 		}

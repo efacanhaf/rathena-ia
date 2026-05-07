@@ -824,6 +824,8 @@ static TIMER_FUNC(aichrif_drift_timer){
 		if (s.cur_mapindex == s.home_mapindex_seen) continue;
 		// Drifted. Warp back to spawn cell.
 		aichrif_send_warp(char_fd, s.shell_id, s.home_map.c_str(), s.home_x, s.home_y);
+		AI_LOG(1, "drift warp shell=%u %u→%s\n",
+			s.shell_id, s.cur_mapindex, s.home_map.c_str());
 		s.last_action_tick = now; // pause fidget for a tick
 	}
 	return 0;
@@ -881,6 +883,9 @@ static TIMER_FUNC(aichrif_respawn_timer){
 		s.fleeing_until = 0;
 		s.last_action_tick = now;
 		g_stats.respawns_sent++;
+		AI_LOG(1, "respawn shell=%u at %s(%u,%u)\n",
+			s.shell_id, s.init_snap.map_name.c_str(),
+			s.init_snap.x, s.init_snap.y);
 	}
 	return 0;
 }
