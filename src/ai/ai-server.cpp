@@ -19,6 +19,7 @@
 
 #include "aichrif.hpp"
 #include "chat.hpp"
+#include "map_difficulty.hpp"
 #include "names.hpp"
 #include "profile.hpp"
 #include "shell_pool.hpp"
@@ -173,6 +174,13 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 	// Phase 4: per-job, per-tier stat/gear profiles.
 	if (!rathena::server_ai::profile_load("db/ai/population_profile.yml")) {
 		ShowWarning("ai-server: profile not loaded; shells fall back to hardcoded floor.\n");
+	}
+
+	// Phase 5 — per-map difficulty (avg mob level). Spawner uses this to pick
+	// the profile tier that matches the map; falls back to mid tier when the
+	// file is missing.
+	if (!rathena::server_ai::map_difficulty_load("db/ai/map_difficulty.yml")) {
+		ShowWarning("ai-server: map_difficulty not loaded; tier defaults to mid for all maps.\n");
 	}
 
 	// Phase 3.4: ambient chat lines.

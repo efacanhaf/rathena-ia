@@ -19,6 +19,7 @@
 
 #include "ai-server.hpp"
 #include "chat.hpp"
+#include "map_difficulty.hpp"
 #include "profile.hpp"
 #include "names.hpp"
 #include "shell_pool.hpp"
@@ -102,8 +103,6 @@ int32  g_spawn_emitted = 0;
 // map-server has finished its initialize() and is parsing AI packets).
 // Reset on reconnect so we re-probe after a map restart.
 bool   g_map_ready = false;
-// Triage step: cap=1 to see if 1 shell + all timers active is enough to
-// reproduce the crash, or if it only happens at scale.
 constexpr int32 SPAWN_BATCH_PER_TICK = 20;
 constexpr int32 SPAWN_HARD_CAP = 1;
 }
@@ -583,8 +582,17 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 		// shells stay bare-handed/hat-less if the profile says so.
 		init.weapon = 0;
 		init.head_top = 0;
-		uint8 tier = (uint8)((t.category == spawn_category::TOWN) ? 0
-			: (t.category == spawn_category::FIELD) ? 1 : 2);
+		// Phase 5 — pick tier from the map's avg mob level (Towns always T0).
+		// Then skip this draw if the job's profile doesn't have that exact
+		// tier; better no shell than a lvl-35 High Mage in a lvl-80 field.
+		uint8 tier = (t.category == spawn_category::TOWN)
+			? (uint8)0
+			: rathena::server_ai::map_difficulty_tier(t.map_name.c_str());
+		if (!rathena::server_ai::profile_has_exact(t.job, tier)) {
+			shell_pool_free(sid);
+			emitted++;
+			continue;
+		}
 		init.tier = tier;
 		init.map_name = t.map_name.c_str();
 		init.x = bx;
@@ -782,7 +790,9 @@ static TIMER_FUNC(aichrif_combat_timer){
 			aichrif_send_cast(char_fd, s.shell_id, pick->skill_name.c_str(),
 				pick->level, kind, cast_target, 0, 0);
 			s.last_cast_tick = now;
-		} else {
+		} else if (!skill_picker_is_caster(s.job)) {
+			// Pure casters wait (SP regen, cooldown, condition flip) instead
+			// of whacking with a staff. Melee/hybrid jobs auto-attack.
 			aichrif_send_attack(char_fd, s.shell_id, tid, true);
 		}
 	}

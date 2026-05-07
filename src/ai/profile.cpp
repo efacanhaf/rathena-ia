@@ -241,4 +241,9 @@ ai_profile profile_get(uint16 job, uint8 tier){
 	return pools_to_profile(g_defaults_pools[tier]);
 }
 
+bool profile_has_exact(uint16 job, uint8 tier){
+	if (tier > 2) tier = 2;
+	return g_table.find(key(job, tier)) != g_table.end();
+}
+
 }

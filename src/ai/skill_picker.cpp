@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <ryml.hpp>
 
@@ -43,6 +44,74 @@ const std::unordered_map<std::string, uint32> g_status_bit = {
 	{ "autoguard",  AI_ST_AUTOGUARD },
 	{ "increase_agi", AI_ST_INC_AGI },
 	{ "inc_agi",    AI_ST_INC_AGI },
+};
+
+/// Phase 5 — known passive skills. The map-server's CAST handler drops
+/// these when shells try to cast them, but the ai-server still consumes
+/// the 5s cast cooldown thinking it succeeded — so the shell stands idle
+/// instead of attacking. We strip them at load time so the picker never
+/// returns one. Only includes 1st/trans-1st/2-1/2-2 base skills that
+/// shipped in population_skill_db.yml; extend when adding new rotations.
+const std::unordered_set<std::string> g_passive_skills = {
+	// Swordsman tree
+	"SM_SWORD", "SM_TWOHAND", "SM_RECOVERY", "SM_HP",
+	// Mage tree
+	"MG_SRECOVERY",
+	// Archer tree
+	"AC_OWL",          // active in some clients but no-op for shells
+	"AC_VULTURE",
+	// Acolyte tree
+	"AL_DP", "AL_DEMONBANE",
+	// Merchant tree
+	"MC_INCCARRY", "MC_DISCOUNT", "MC_OVERCHARGE", "MC_PUSHCART",
+	"MC_VENDING",   // can't auto-vend
+	// Thief tree
+	"TF_HIDING",    // toggle, but useless in shell rotation
+	"TF_MISS", "TF_DOUBLE", "TF_STEAL",
+	// Knight
+	"KN_RIDING", "KN_CAVALIERMASTERY", "KN_TWOHANDQUICKEN",
+	// Crusader
+	"CR_TRUST",
+	// Hunter
+	"HT_BEASTBANE", "HT_FALCON", "HT_STEELCROW",
+	// Sage
+	"SA_ADVANCEDBOOK", "SA_FREECAST", "SA_DRAGONOLOGY",
+	// Wizard
+	// (no notable passives in the shipped rotation)
+	// Priest
+	"PR_MACEMASTERY",
+	// Blacksmith
+	"BS_HILTBINDING", "BS_WEAPONRESEARCH", "BS_IRON",
+	// Assassin
+	"AS_CLOAKING", // toggle — shells shouldn't auto-cloak mid-fight
+	"AS_RIGHT", "AS_LEFT",
+	// Rogue
+	"RG_TUNNELDRIVE", "RG_GANGSTER", "RG_COMPULSION", "RG_PLAGIARISM",
+	// Alchemist
+	"AM_TWILIGHT1", "AM_TWILIGHT2", "AM_TWILIGHT3",
+	// Bard / Dancer
+	"BA_MUSICALLESSON", "DC_DANCINGLESSON",
+};
+static bool is_passive(const std::string& name){
+	return g_passive_skills.find(name) != g_passive_skills.end();
+}
+
+/// Pure caster jobs — never auto-attack. If they're out of SP / on cooldown /
+/// no condition matched, they stand and wait (the engagement clears next
+/// tick when the mob walks away or dies).
+const std::unordered_set<uint16> g_caster_jobs = {
+	2,    // Mage
+	4003, // High Mage
+	10,   // Wizard
+	4010, // High Wizard
+	16,   // Sage
+	4017, // Professor
+	8,    // Priest
+	4014, // High Priest
+	// 3rd classes
+	4047, // Warlock
+	4049, // Arch Bishop
+	4053, // Sorcerer
 };
 
 static uint32 status_name_to_bit(const std::string& name){
@@ -150,7 +219,7 @@ bool skill_picker_load(const char* yaml_path){
 		return false;
 	}
 
-	int32 jobs = 0, total_skills = 0;
+	int32 jobs = 0, total_skills = 0, dropped_passives = 0;
 	for (const auto& job_node : body) {
 		uint16 job = (uint16)read_int(job_node, "JobId", 0);
 		auto skills_node = job_node.find_child(c4::to_csubstr("Skills"));
@@ -161,6 +230,12 @@ bool skill_picker_load(const char* yaml_path){
 		for (const auto& sk : skills_node) {
 			skill_entry e;
 			e.skill_name = read_str(sk, "SkillId");
+			if (is_passive(e.skill_name)) {
+				dropped_passives++;
+				continue;	// map-server's CAST handler drops these; if the
+							// picker returns one, the shell burns a 5s
+							// cooldown standing idle.
+			}
 			if (starts_with_digit(e.skill_name)) {
 				e.skill_id = (uint16)std::atoi(e.skill_name.c_str());
 			}
@@ -188,8 +263,13 @@ bool skill_picker_load(const char* yaml_path){
 	}
 	aFree(buf);
 
-	ShowStatus("skill_picker: loaded %d job rotations, %d skill entries.\n", jobs, total_skills);
+	ShowStatus("skill_picker: loaded %d job rotations, %d skill entries (%d passives stripped).\n",
+		jobs, total_skills, dropped_passives);
 	return true;
+}
+
+bool skill_picker_is_caster(uint16 job){
+	return g_caster_jobs.find(job) != g_caster_jobs.end();
 }
 
 const skill_rotation* skill_picker_get(uint16 job){

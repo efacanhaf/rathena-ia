@@ -50,6 +50,12 @@ bool profile_load(const char* yaml_path);
 /// previously-held reference.
 ai_profile profile_get(uint16 job, uint8 tier);
 
+/// Phase 5 — does (job, tier) have an exact entry in population_profile.yml
+/// (no fallback)? Spawner uses this to skip spawning jobs whose profile
+/// doesn't cover the map's difficulty tier — better no shell than a
+/// lvl-35 High Mage in a lvl-80 field.
+bool profile_has_exact(uint16 job, uint8 tier);
+
 }
 
 #endif /* AI_PROFILE_HPP */

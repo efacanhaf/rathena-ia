@@ -111,6 +111,11 @@ const skill_entry* skill_picker_choose(const skill_rotation& rot,
 /// the empty/missing case and SC_NONE-equivalent unknown for typos (logged).
 skill_cond skill_picker_parse_cond(const std::string& s);
 
+/// Phase 5 — caster jobs that should never fall back to a basic melee
+/// attack when the picker can't find a skill (out of SP, on cooldown,
+/// no condition match). A wizard whacking with a staff looks broken.
+bool skill_picker_is_caster(uint16 job);
+
 }
 
 #endif /* AI_SKILL_PICKER_HPP */

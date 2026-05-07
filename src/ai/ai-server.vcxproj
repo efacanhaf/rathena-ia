@@ -40,14 +40,14 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
-    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -178,6 +178,7 @@
     <ClCompile Include="ai-server.cpp" />
     <ClCompile Include="aichrif.cpp" />
     <ClCompile Include="chat.cpp" />
+    <ClCompile Include="map_difficulty.cpp" />
     <ClCompile Include="names.cpp" />
     <ClCompile Include="profile.cpp" />
     <ClCompile Include="shell_pool.cpp" />
@@ -188,6 +189,7 @@
     <ClInclude Include="ai-server.hpp" />
     <ClInclude Include="aichrif.hpp" />
     <ClInclude Include="chat.hpp" />
+    <ClInclude Include="map_difficulty.hpp" />
     <ClInclude Include="names.hpp" />
     <ClInclude Include="profile.hpp" />
     <ClInclude Include="shell_pool.hpp" />
