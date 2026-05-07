@@ -92,6 +92,13 @@ struct shell_ctx {
 	// Phase 5 — bitmasks of AI_ST_* (defined in common/ai_packets.hpp).
 	uint32 self_statuses = 0;
 	uint32 target_statuses = 0;
+	// Phase 5 — target classification, populated from the picked
+	// enemies[] row before evaluating ENEMY_RACE/ELEMENT/IS_BOSS.
+	uint8 target_race = 0;       // e_race
+	uint8 target_element = 0;    // low nibble = e_element type
+	uint8 target_element_lv = 0; // 1..4
+	bool  target_is_boss = false;
+	bool  target_is_mvp = false;
 };
 
 /// Pick the next skill from the rotation that passes its condition gate

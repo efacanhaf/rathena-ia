@@ -244,19 +244,29 @@ static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
 			if (bit == 0) return true;
 			return (ctx.self_statuses & bit) == 0;
 		}
-		// Phase 3 stubs (ally tracking not in REPORT yet).
+		// Phase 5 — target classification from REPORT.enemies[].
+		case skill_cond::ENEMY_HIDDEN:
+			return ctx.has_target &&
+			       (ctx.target_statuses & (AI_ST_HIDING | AI_ST_CLOAKING)) != 0;
+		case skill_cond::ENEMY_RACE:
+			return ctx.has_target && (int32)ctx.target_race == e.cond_value_num;
+		case skill_cond::ENEMY_ELEMENT:
+			return ctx.has_target && (int32)ctx.target_element == e.cond_value_num;
+		case skill_cond::ENEMY_IS_BOSS:
+			// e.cond_value_num: 0 = miniboss-or-mvp, 1 = mvp-only,
+			// anything else (default-when-omitted) treats as miniboss-or-mvp.
+			if (!ctx.has_target) return false;
+			if (e.cond_value_num == 1) return ctx.target_is_mvp;
+			return ctx.target_is_boss;
+		// Phase 3 stubs (ally tracking + caster-only state not in REPORT yet).
 		case skill_cond::ALLY_STATUS:
 		case skill_cond::NOT_ALLY_STATUS:
 		case skill_cond::ALLY_HP_BELOW:
 		case skill_cond::HAS_SPHERE:
-		case skill_cond::ENEMY_HIDDEN:
 		case skill_cond::ENEMY_CASTING:
 		case skill_cond::ENEMY_CASTING_GROUND:
 		case skill_cond::CELL_HAS_SKILL_UNIT:
 		case skill_cond::SELF_TARGETED:
-		case skill_cond::ENEMY_ELEMENT:
-		case skill_cond::ENEMY_RACE:
-		case skill_cond::ENEMY_IS_BOSS:
 		case skill_cond::MELEE_ATTACKED:
 		case skill_cond::RANGE_ATTACKED:
 			return true;

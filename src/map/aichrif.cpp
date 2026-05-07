@@ -396,6 +396,18 @@ static int32 ai_report_collect_mob(block_list* bl, va_list ap){
 	row.x = (uint16)bl->x;
 	row.y = (uint16)bl->y;
 	row.distance = dist;
+	// Phase 5 — race / element / boss flags so the picker can gate skills
+	// like Holy Light (vs UNDEAD), Ice Bolt (vs FIRE-element), and avoid
+	// MVPs entirely if the rotation prefers it.
+	row.race = (uint8)md->status.race;
+	uint8 ele_type = (uint8)(md->status.def_ele & 0x0F);
+	uint8 ele_lv   = (uint8)(md->status.ele_lv & 0x0F);
+	row.element = (uint8)((ele_lv << 4) | ele_type);
+	uint8 fl = 0;
+	auto bt = md->get_bosstype();
+	if (bt == BOSSTYPE_MINIBOSS) fl |= AI_ENEMY_FLAG_BOSS;
+	if (bt == BOSSTYPE_MVP)      fl |= AI_ENEMY_FLAG_BOSS | AI_ENEMY_FLAG_MVP;
+	row.flags = fl;
 	row.statuses = ai_collect_statuses(bl);  // Phase 5 — SC bitmask
 
 	// insert keeping ascending distance order; cap at AI_REPORT_MAX_ENEMIES.

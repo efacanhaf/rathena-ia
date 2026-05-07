@@ -765,6 +765,11 @@ static TIMER_FUNC(aichrif_combat_timer){
 			// Phase 5 — feed SC bitmasks for SELF_STATUS / ENEMY_STATUS.
 			ctx.self_statuses   = s.self_statuses;
 			ctx.target_statuses = s.enemies[idx].statuses;
+			ctx.target_race     = s.enemies[idx].race;
+			ctx.target_element  = (uint8)(s.enemies[idx].element & 0x0F);
+			ctx.target_element_lv = (uint8)((s.enemies[idx].element >> 4) & 0x0F);
+			ctx.target_is_boss  = (s.enemies[idx].flags & AI_ENEMY_FLAG_BOSS) != 0;
+			ctx.target_is_mvp   = (s.enemies[idx].flags & AI_ENEMY_FLAG_MVP) != 0;
 			pick = skill_picker_choose(*rot, ctx, &s.skill_cursor);
 		}
 		if (pick != nullptr && !pick->skill_name.empty()) {

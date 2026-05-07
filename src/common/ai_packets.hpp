@@ -159,13 +159,18 @@ constexpr uint32 AI_ST_INC_AGI   = 1u << 15;
 
 /// One row in PACKET_AI_SHELL_REPORT.enemies[]. mob_class kept for
 /// behavior-side mob_db lookups; distance pre-computed on map side.
+constexpr uint8 AI_ENEMY_FLAG_BOSS    = 1 << 0;  // miniboss or MVP
+constexpr uint8 AI_ENEMY_FLAG_MVP     = 1 << 1;  // MVP only
+
 struct PACKET_AI_NEARBY_ENEMY {
 	uint32 id;          // block_list id
 	uint16 mob_class;   // mob_db id; 0 if not BL_MOB
 	uint16 hp_pct;      // 0..100
 	uint16 x, y;
 	uint8  distance;    // chebyshev cells
-	uint8  pad;
+	uint8  race;        // Phase 5 — see e_race (RC_FORMLESS..RC_ALL)
+	uint8  element;     // Phase 5 — packed: low nibble = e_element type, high nibble = ele_lv
+	uint8  flags;       // Phase 5 — AI_ENEMY_FLAG_* bits
 	uint32 statuses;    // Phase 5 — bitmask of AI_ST_* on this enemy
 };
 
