@@ -410,3 +410,23 @@ Body:
     Modes:
       CanMove: true
       Detector: true
+
+# =============================================================================
+# Drop Gold tuning — sobrescreve so a slot do Gold; outros drops preservados.
+# Index = posicao no array Drops do mob original (db/re/mob_db.yml).
+# Rate efetivo = native_rate * battle_config.item_rate_common_* / 100.
+# =============================================================================
+
+  # Golden Thief Bug (Mvp:true -> item_rate_common_mvp=2000): 250 * 20 = 50%
+  - Id: 1086
+    Drops:
+      - Index: 0
+        Item: Gold
+        Rate: 250
+
+  # Golden Savage (Boss/miniboss -> item_rate_common_boss=1500): 500 * 15 = 75%
+  - Id: 1840
+    Drops:
+      - Index: 2
+        Item: Gold
+        Rate: 500
