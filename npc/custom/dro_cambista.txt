@@ -1,0 +1,146 @@
+//===== DimensionsRO ==========================================
+//= Cambista — NPC de conversao entre moedas (anti-P2W puro).
+//===== Description: ==========================================
+//= Conversoes one-way, todas em direcao a Cash (sumidouro de
+//= cosmeticos via Cash Shop). Cash NUNCA compra outras moedas
+//= — real money so' compra cosmeticos / QoL diretamente no
+//= Cash Shop in-game.
+//=
+//=   Booster Coin -> Nyan         (50:1, cap 5/semana)
+//=   Nyan         -> Cash         (1:10, sem cap)
+//=
+//= Conversoes BLOQUEADAS (anti-P2W):
+//=   Cash -> qualquer moeda
+//=   Nyan -> Booster Coin
+//=   Booster Coin -> Cash (atalho — passar por Nyan preserva escassez)
+//=
+//= Storage:
+//=   Cash         -> #CASHPOINTS  (account-scoped scalar)
+//=   Nyan         -> item 6909 (Nyangvine_Fruit)
+//=   Booster Coin -> item 1000254 (Booster_Coin)
+//=
+//= Cap semanal BC->Nyan:
+//=   #DRO_BC_NYAN_WEEK       -> contador (0..5)
+//=   #DRO_BC_NYAN_WEEK_KEY$  -> "AAAA-WW" da semana atual; reseta
+//=                              quando muda (gettime year + dayofyear/7).
+//=
+//= Localizacao: prontera 158,196 (fonte, area visivel).
+//============================================================
+
+prontera,158,196,5	script	Cambista#dro	4_M_03,{
+	mes "[Cambista]";
+	mes "Saudacoes! Eu troco moedas premium aqui.";
+	mes "Aceito ^4d4dffBooster Coin^000000 e ^4d4dffNyangvine^000000.";
+	mes "^aaaaaaCash so' compra QoL/cosmetico direto no Cash Shop in-game (atalho ALT+M).^000000";
+	next;
+	mes "[Cambista]";
+	mes "Seu saldo:";
+	mes "  Cash: ^aaaaaa" + (#CASHPOINTS) + "^000000";
+	mes "  Nyangvine: ^aaaaaa" + countitem(6909) + "^000000";
+	mes "  Booster Coin: ^aaaaaa" + countitem(1000254) + "^000000";
+	next;
+
+	// Reset cap semanal se a semana (rolling 7-day) mudou.
+	// Usa year + day_of_year/7 como chave — rathena nao tem "week of year"
+	// nativo. Janelas nao alinham com calendario Mon-Sun, mas reset
+	// determinístico a cada 7 dias e' suficiente.
+	.@key$ = sprintf("%d-%02d", gettime(7), gettime(8)/7);
+	if (#DRO_BC_NYAN_WEEK_KEY$ != .@key$) {
+		#DRO_BC_NYAN_WEEK = 0;
+		#DRO_BC_NYAN_WEEK_KEY$ = .@key$;
+	}
+
+	switch (select("Trocar Booster Coin por Nyangvine (50 BC = 1 Nyangvine):Trocar Nyangvine por Cash (1 Nyangvine = 10 Cash):Sair")) {
+	case 1: callsub L_bc_to_nyan; break;
+	case 2: callsub L_nyan_to_cash; break;
+	case 3: close;
+	}
+	close;
+
+// ---------------------------------------------------------------
+// Booster Coin -> Nyangvine (50 BC = 1 Nyan, cap 5/semana)
+// ---------------------------------------------------------------
+L_bc_to_nyan:
+	.@remaining = 5 - #DRO_BC_NYAN_WEEK;
+	mes "[Cambista]";
+	if (.@remaining <= 0) {
+		mes "Voce ja' usou todas as conversoes de Booster Coin desta semana (limite 5/semana).";
+		mes "Volte na proxima semana.";
+		return;
+	}
+	mes "Quantos ^4d4dffNyangvines^000000 voce quer?";
+	mes "Cada Nyangvine custa ^4d4dff50 Booster Coin^000000.";
+	mes "Voce tem ^4d4dff" + countitem(1000254) + " BC^000000 e ^4d4dff" + .@remaining + "^000000 conversoes restantes nesta semana.";
+	next;
+	input .@qty;
+	if (.@qty <= 0) {
+		mes "[Cambista]";
+		mes "Quantidade invalida.";
+		return;
+	}
+	if (.@qty > .@remaining) {
+		mes "[Cambista]";
+		mes "Voce so' pode fazer mais ^4d4dff" + .@remaining + "^000000 conversao(oes) esta semana.";
+		return;
+	}
+	.@cost = .@qty * 50;
+	if (countitem(1000254) < .@cost) {
+		mes "[Cambista]";
+		mes "Voce nao tem Booster Coins suficientes.";
+		mes "Custo: " + .@cost + " BC. Voce tem: " + countitem(1000254) + ".";
+		return;
+	}
+	mes "[Cambista]";
+	mes "Voce vai trocar ^4d4dff" + .@cost + " Booster Coins^000000 por ^4d4dff" + .@qty + " Nyangvine(s)^000000.";
+	mes "Apos a troca: ^4d4dff" + (.@remaining - .@qty) + "^000000 conversoes restantes nesta semana.";
+	mes "Confirma?";
+	next;
+	if (select("Sim, trocar:Cancelar") == 2) {
+		mes "[Cambista]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 1000254, .@cost;
+	getitem 6909, .@qty;
+	#DRO_BC_NYAN_WEEK += .@qty;
+	mes "[Cambista]";
+	mes "Pronto. ^4d4dff-" + .@cost + " BC, +" + .@qty + " Nyangvine^000000.";
+	mes "Conversoes restantes esta semana: ^4d4dff" + (5 - #DRO_BC_NYAN_WEEK) + "^000000.";
+	return;
+
+// ---------------------------------------------------------------
+// Nyangvine -> Cash (1 Nyan = 10 Cash, sem cap)
+// ---------------------------------------------------------------
+L_nyan_to_cash:
+	mes "[Cambista]";
+	mes "Quantas ^4d4dffNyangvines^000000 voce quer trocar por Cash?";
+	mes "Cada Nyangvine vale ^4d4dff10 Cash^000000.";
+	mes "Voce tem ^4d4dff" + countitem(6909) + " Nyangvine(s)^000000.";
+	next;
+	input .@qty;
+	if (.@qty <= 0) {
+		mes "[Cambista]";
+		mes "Quantidade invalida.";
+		return;
+	}
+	if (countitem(6909) < .@qty) {
+		mes "[Cambista]";
+		mes "Voce nao tem Nyangvines suficientes.";
+		return;
+	}
+	.@gain = .@qty * 10;
+	mes "[Cambista]";
+	mes "Voce vai trocar ^4d4dff" + .@qty + " Nyangvine(s)^000000 por ^4d4dff" + .@gain + " Cash^000000.";
+	mes "Confirma?";
+	next;
+	if (select("Sim, trocar:Cancelar") == 2) {
+		mes "[Cambista]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 6909, .@qty;
+	#CASHPOINTS += .@gain;
+	mes "[Cambista]";
+	mes "Pronto. ^4d4dff-" + .@qty + " Nyangvine, +" + .@gain + " Cash^000000. Saldo: " + (#CASHPOINTS) + " Cash.";
+	return;
+}

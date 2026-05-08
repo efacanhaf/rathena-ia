@@ -1,0 +1,42 @@
+//===== DimensionsRO ==========================================
+//= Economy Hooks — daily Cash bonus + MVP Nyan counter.
+//===== Description: ==========================================
+//= Hooks que rodam automaticamente em eventos de player:
+//=
+//= 1. OnPCLoginEvent: +2 Cash no primeiro login do dia.
+//=    Storage: #DRO_DAILY_CASH_LAST$ (key "AAAA-DDD" do dia do ano).
+//=    Account-scoped — soh um char por conta ganha por dia, simulado
+//=    pelo fato de #CASHPOINTS ser conta-wide.
+//=
+//= 2. OnNPCKillEvent: +1 Nyangvine a cada 100 MVPs killed.
+//=    Storage: #DRO_MVP_KILLS (account-scoped contador).
+//=    Deterministico — a 100a kill de MVP da conta ganha 1 Nyan.
+//=    Multi-char na mesma conta compartilha o contador (ok).
+//=
+//= Nao consome zeny, nao da P2W boost, nao escala com cash.
+//============================================================
+
+-	script	dro_economy_hooks	-1,{
+	end;
+
+OnPCLoginEvent:
+	// Daily Cash bonus — 2 Cash no primeiro login do dia.
+	.@today$ = sprintf("%d-%03d", gettime(7), gettime(8));
+	if (#DRO_DAILY_CASH_LAST$ != .@today$) {
+		#CASHPOINTS += 2;
+		#DRO_DAILY_CASH_LAST$ = .@today$;
+		dispbottom "[DimensionsRO] +2 Cash de bonus diario. Saldo: " + (#CASHPOINTS) + " Cash.";
+	}
+	end;
+
+OnNPCKillEvent:
+	// Soh conta MVPs (mobs com MVP exp > 0).
+	if (getmonsterinfo(killedrid, MOB_MVPEXP) <= 0) end;
+
+	#DRO_MVP_KILLS += 1;
+	if (#DRO_MVP_KILLS % 100 == 0) {
+		getitem 6909, 1;
+		dispbottom "[DimensionsRO] " + (#DRO_MVP_KILLS) + " MVPs derrotados! +1 Nyangvine.";
+	}
+	end;
+}
