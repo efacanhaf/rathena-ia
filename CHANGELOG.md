@@ -8,6 +8,23 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-05-08
 
+### Adicionado — Sistema de Economia (Cambista, Temporal Tina)
+
+- **Quatro moedas oficializadas**: Zeny (dia-a-dia), Booster Coin (skill PvE,
+  drop em instâncias), Nyangvine (lealdade/conveniência), Cash (cosméticos/QoL).
+- **Cambista** (prontera 166,290): converte Booster Coin → Nyangvine
+  (50:1, máximo 5 conversões/semana) e Nyangvine → Cash (1:10, sem cap).
+  Cash não converte em outras moedas — comprar Cash gasta no Cash Shop.
+- **Temporal Tina** (prontera 145,293): vende Episode Pass tickets em troca
+  de Nyangvine via UI nativa de barter. Ep14/15: 8 Nyan, Ep16: 10 Nyan,
+  Ep17: 12 Nyan.
+- **Cash Shop** (ALT+M, aba Other): vende os mesmos tickets em Cash com
+  preços paralelos (Ep14/15: 80 Cash, Ep16: 100, Ep17: 120).
+- **Daily login bonus**: +2 Cash no primeiro login do dia (acumula no
+  saldo da conta).
+- **MVP counter para Nyangvine**: a cada 100 MVPs derrotados, o player
+  ganha 1 Nyangvine. Determinístico, contador por conta.
+
 ### Adicionado — Valkyrie (Pular Episódios)
 
 - **Novo NPC: Valkyrie** (prt_cas 373,77 — Castelo de Prontera). Aceita
@@ -22,8 +39,10 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - O **skip não concede EXP, drops ou recompensas** das quests puladas —
   apenas marca como completas. Funciona **por personagem** (cada char usa
   seu próprio passe).
-- Custo: **1 passe** por uso. A obtenção dos passes será disponibilizada
-  separadamente em update futuro.
+- Custo: **1 passe** por uso. Os passes podem ser obtidos via Cash Shop
+  (ALT+M), via Temporal Tina em Prontera (Nyangvine), ou como drop de
+  Booster Packs (a versão "Clear Ticket" é equivalente à "Pass Ticket"
+  e a Valkyrie aceita ambas).
 
 ### Adicionado — Sistema de Aventureiros
 

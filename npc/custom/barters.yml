@@ -365,3 +365,41 @@ Body:
           - Index: 0
             Item: Metal_W_Ticket
             Amount: 1
+
+###########################################################################
+##= Temporal Tina — Episode Pass Tickets (Prontera 145, 293)
+##= Aceita Nyangvine_Fruit (6909) e devolve Episode Pass tickets.
+##= Pareada com a Valkyrie (prt_cas 373,77) que aplica o Episode Skip.
+##= Custo paralelo ao Cash Shop (1 Nyan = 10 Cash).
+###########################################################################
+  - Name: Temporal Tina#dro_skip
+    Map: prontera
+    X: 145
+    Y: 293
+    Direction: South
+    Sprite: 4_F_TELEPORTER
+    Items:
+      - Index: 0
+        Item: D_EpisodClear14            # Episode 14 Pass Ticket (1001755)
+        RequiredItems:
+          - Index: 0
+            Item: Nyangvine_Fruit
+            Amount: 8
+      - Index: 1
+        Item: D_EpisodClear15            # Episode 15 Pass Ticket (1001756)
+        RequiredItems:
+          - Index: 0
+            Item: Nyangvine_Fruit
+            Amount: 8
+      - Index: 2
+        Item: D_EpisodClear16            # Episode 16 Pass Ticket (1001260)
+        RequiredItems:
+          - Index: 0
+            Item: Nyangvine_Fruit
+            Amount: 10
+      - Index: 3
+        Item: D_EpisodClear17            # Episode 17 Pass Ticket (1001261)
+        RequiredItems:
+          - Index: 0
+            Item: Nyangvine_Fruit
+            Amount: 12

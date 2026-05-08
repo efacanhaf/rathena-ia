@@ -9,11 +9,17 @@
 //= Localizacao: prt_cas 373,77 (mesma da Valkyrie iRO).
 //= Custo: 1 ticket. (A venda dos tickets sera feita em outro NPC.)
 //=
-//= Tickets aceitos:
-//=   - 1001755 D_EpisodClear14 (Episode 14 Pass Ticket)
-//=   - 1001756 D_EpisodClear15 (Episode 15 Pass Ticket)
-//=   - 1001260 D_EpisodClear16 (Episode 16 Pass Ticket)
-//=   - 1001261 D_EpisodClear17 (Episode 17 Pass Ticket)
+//= Tickets aceitos (duas familias por episodio):
+//=   Ep14: 1000285 EpisodClear14, 1001755 D_EpisodClear14
+//=   Ep15: 1000286 EpisodClear15, 1001756 D_EpisodClear15
+//=   Ep16: 1000282 EpisodClear16, 1000283 EpisodClear16_ (event),
+//=         1001260 D_EpisodClear16
+//=   Ep17: 1000287 EpisodClear17, 1001261 D_EpisodClear17
+//=
+//= Familia 1 (EpisodClearXX) e' a versao "Eps XX Clear Ticket"
+//= drop em Booster Packs (BOOSTER_PACK_100 dropa EpisodClear16_).
+//= Familia 2 (D_EpisodClearXX) e' a "Episode XX Pass Ticket" comprada
+//= pela Temporal Tina ou pelo Cash Shop.
 //=
 //= Lock ep17.1 ($@ep17_1_lock):
 //=   ON  -> ticket 17 cobre apenas 17.1 (terra_gloria_main = 26
@@ -59,9 +65,10 @@ prt_cas,373,77,5	script	Valkyrie#dro_skip	811,{
 // quests_malangdo, quests_malaya, quests_eclage, quests_14_3, quests_14_3_bis.
 // ---------------------------------------------------------------
 L_ep14:
-	if (countitem(1001755) < 1) {
+	.@a = countitem(1000285); .@b = countitem(1001755);
+	if (.@a + .@b < 1) {
 		mes "[Valkyrie]";
-		mes "Voce nao possui o ^4d4dffPasse de Episodio 14^000000.";
+		mes "Voce nao possui um ^4d4dffPasse de Episodio 14^000000.";
 		return;
 	}
 	mes "[Valkyrie]";
@@ -73,7 +80,7 @@ L_ep14:
 		mes "Como desejar.";
 		return;
 	}
-	delitem 1001755, 1;
+	if (.@b > 0) delitem 1001755, 1; else delitem 1000285, 1;
 
 	setarray .@q[0],1145,1146,1147,1148,1149,1150,1151,1152,1153,1154,1155,1174,1175,1176,1177,1178,1179,1180,1181,1182;
 	setarray .@q[20],1183,1184,1185,1186,1187,1188,1189,1190,1191,1192,1193,1214,1217,1218,1219,1220,1221,1222,1223,1228;
@@ -109,9 +116,10 @@ L_ep14:
 // 128 quest IDs agregadas (64 de cada).
 // ---------------------------------------------------------------
 L_ep15:
-	if (countitem(1001756) < 1) {
+	.@a = countitem(1000286); .@b = countitem(1001756);
+	if (.@a + .@b < 1) {
 		mes "[Valkyrie]";
-		mes "Voce nao possui o ^4d4dffPasse de Episodio 15^000000.";
+		mes "Voce nao possui um ^4d4dffPasse de Episodio 15^000000.";
 		return;
 	}
 	mes "[Valkyrie]";
@@ -123,7 +131,7 @@ L_ep15:
 		mes "Como desejar.";
 		return;
 	}
-	delitem 1001756, 1;
+	if (.@b > 0) delitem 1001756, 1; else delitem 1000286, 1;
 
 	// Spine vars 15.1 + 15.2
 	ep15_1_atnad = 34;
@@ -170,9 +178,12 @@ L_ep15:
 // 296 quest IDs agregadas (169 + 127).
 // ---------------------------------------------------------------
 L_ep16:
-	if (countitem(1001260) < 1) {
+	// Ep16 tem 3 variantes: 1000282 (regular), 1000283 (event, drop em
+	// Booster Pack 100), 1001260 (Pass Ticket via Tina/Cash Shop).
+	.@a = countitem(1000282); .@b = countitem(1000283); .@c = countitem(1001260);
+	if (.@a + .@b + .@c < 1) {
 		mes "[Valkyrie]";
-		mes "Voce nao possui o ^4d4dffPasse de Episodio 16^000000.";
+		mes "Voce nao possui um ^4d4dffPasse de Episodio 16^000000.";
 		return;
 	}
 	mes "[Valkyrie]";
@@ -184,7 +195,9 @@ L_ep16:
 		mes "Como desejar.";
 		return;
 	}
-	delitem 1001260, 1;
+	if (.@c > 0) delitem 1001260, 1;
+	else if (.@a > 0) delitem 1000282, 1;
+	else delitem 1000283, 1;
 
 	// Spine var 16.1
 	ep16_royal = 24;
@@ -232,9 +245,10 @@ L_ep16:
 // Lock-aware: lock ON cobre so 17.1; lock OFF cobre 17.1 + 17.2.
 // ---------------------------------------------------------------
 L_ep17:
-	if (countitem(1001261) < 1) {
+	.@a = countitem(1000287); .@b = countitem(1001261);
+	if (.@a + .@b < 1) {
 		mes "[Valkyrie]";
-		mes "Voce nao possui o ^4d4dffPasse de Episodio 17^000000.";
+		mes "Voce nao possui um ^4d4dffPasse de Episodio 17^000000.";
 		return;
 	}
 	mes "[Valkyrie]";
@@ -251,7 +265,7 @@ L_ep17:
 		mes "Como desejar.";
 		return;
 	}
-	delitem 1001261, 1;
+	if (.@b > 0) delitem 1001261, 1; else delitem 1000287, 1;
 
 	// Spine var 17.1 (sempre)
 	terra_gloria_main = 26;

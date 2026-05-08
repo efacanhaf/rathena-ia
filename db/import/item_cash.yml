@@ -31,3 +31,19 @@
 Header:
   Type: ITEM_CASH_DB
   Version: 1
+
+Body:
+  # Episode Pass Tickets — preco paralelo a Tina (Nyan x10).
+  # Tina cobra 8/8/10/12 Nyan. Cash Shop cobra 80/80/100/120 Cash
+  # (mesma rate que Nyan->Cash 1:10). Ambos os caminhos sao validos:
+  # real money (Cash Shop) ou grinding (BC->Nyan->Tina).
+  - Tab: Other
+    Items:
+      - Item: D_EpisodClear14
+        Price: 80
+      - Item: D_EpisodClear15
+        Price: 80
+      - Item: D_EpisodClear16
+        Price: 100
+      - Item: D_EpisodClear17
+        Price: 120
