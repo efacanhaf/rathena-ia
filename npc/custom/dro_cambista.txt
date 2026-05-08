@@ -24,10 +24,11 @@
 //=   #DRO_BC_NYAN_WEEK_KEY$  -> "AAAA-WW" da semana atual; reseta
 //=                              quando muda (gettime year + dayofyear/7).
 //=
-//= Localizacao: prontera 158,196 (fonte, area visivel).
+//= Localizacao: prontera 166,290 (proximo aos NPCs Centro/Guarani de
+//= booster, formando o "Adventure Convenience" hub).
 //============================================================
 
-prontera,158,196,5	script	Cambista#dro	4_M_03,{
+prontera,166,290,5	script	Cambista#dro	4_M_03,{
 	mes "[Cambista]";
 	mes "Saudacoes! Eu troco moedas premium aqui.";
 	mes "Aceito ^4d4dffBooster Coin^000000 e ^4d4dffNyangvine^000000.";
