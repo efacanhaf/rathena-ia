@@ -23,13 +23,6 @@ include_directories( ${INCLUDE_DIRS} )
 add_executable( ai-server ${SOURCE_FILES} )
 add_dependencies( ai-server ${DEPENDENCIES} )
 target_link_libraries( ai-server ${LIBRARIES} ${DEPENDENCIES} )
-# UNIX ld is single-pass; ai-server.cpp doesn't directly reference Sql_Init
-# (defined in common/sql.cpp, used by common_base/core.cpp). Force the
-# linker to pull sql.cpp.o from common.a so it's visible when common_base
-# is later processed.
-if( UNIX )
-	target_link_options( ai-server PRIVATE "LINKER:-u,Sql_Init" )
-endif()
 set_target_properties( ai-server PROPERTIES COMPILE_FLAGS "${DEFINITIONS}" )
 if( INSTALL_COMPONENT_RUNTIME )
 	cpack_add_component( Runtime_aiserver DESCRIPTION "ai-server" DISPLAY_NAME "ai-server" GROUP Runtime )

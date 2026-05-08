@@ -12,6 +12,7 @@
 #include <common/mapindex.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
+#include <common/sql.hpp>
 #include <common/strlib.hpp>
 #include <common/timer.hpp>
 #include <common/utilities.hpp>
@@ -238,6 +239,12 @@ void AIServer::handle_shutdown(){
 	ShowStatus("ai-server: shutting down...\n");
 	flush_fifos();
 }
+
+// Force the linker to pull sql.cpp.o from libcommon.a even though ai-server
+// itself never opens a DB connection. Without this the UNIX single-pass
+// linker drops sql.cpp.o, then complains that core.cpp (in libcommon_baser.a)
+// has an unresolved Sql_Init reference.
+static volatile auto _ai_force_sql_link = &Sql_Init;
 
 int32 main(int32 argc, char* argv[]){
 	return main_core<AIServer>(argc, argv);
