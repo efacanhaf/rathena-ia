@@ -169,7 +169,6 @@ Body:
       getitem Comp_Power_Booster,5;
       getitem E_Infinity_Drink,5;
       getitem Booster_B_M_2,3;
-      getitem Lv_Up_T_170,5;
       getitem Booster_Coin,82;
       getitem World_Tour_Ticket,20;
       if (!$@ep17_1_lock) {

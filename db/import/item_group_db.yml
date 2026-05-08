@@ -84,5 +84,7 @@ Body:
     SubGroups:
       - SubGroup: 0
         List:
+          - Index: 4
+            Clear: true            # remove Lv_Up_T_170 da box 170
           - Index: 8
             Item: Booster_W_Up_3   # adiciona Final na box 170
