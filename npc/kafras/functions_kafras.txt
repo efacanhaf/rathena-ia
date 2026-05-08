@@ -142,6 +142,13 @@ function	script	F_Kafra	{
 			default: setarray .@K_Menu0$[0],"Save","Use Storage","Use Teleport Service","Rent a Pushcart","Check Other Information","Cancel"; break;
 		}
 	}
+	// DimensionsRO -- GM batch tools (visivel apenas para gmlevel >= 99).
+	if (getgmlevel() >= 99) {
+		.@base_n = getarraysize(.@K_Menu0$);
+		// Insere antes do "Cancel" (ultima entrada).
+		.@K_Menu0$[.@base_n] = .@K_Menu0$[.@base_n - 1];
+		.@K_Menu0$[.@base_n - 1] = "^FF0000[GM] Distribuir item via RODEX^000000";
+	}
 	.@menu$ = implode(.@K_Menu0$,":");
 	while (true) {
 		.@j = select(.@menu$) - 1;
@@ -189,7 +196,115 @@ function	script	F_Kafra	{
 			callfunc "F_KafStor",1,0;
 			next;
 		}
+		// DimensionsRO -- GM-only batch RODEX (item para todos os chars do DB).
+		else if (.@K_Menu0$[.@j] == "^FF0000[GM] Distribuir item via RODEX^000000") {
+			callfunc "F_DRO_GM_BatchRodex";
+			next;
+		}
 	}
+}
+
+//===================================================
+// DimensionsRO -- GM-only: distribui um item para TODAS as contas
+// existentes, 1 por conta. O item cai no PRIMEIRO char que a conta
+// logar (qualquer um) via OnPCLoginEvent abaixo. Quem criar conta
+// depois NAO recebe.
+//
+// Como funciona: escreve direto na tabela acc_reg_num as variaveis
+// de account-scope #DRO_PENDING_ID e #DRO_PENDING_QTY pra todas
+// as contas que tem pelo menos 1 char vivo. No proximo login, o
+// script de login detecta, da o item e zera as flags.
+//
+// Limitacao: suporta 1 batch pendente por conta. Se rodar de novo
+// antes da conta logar, sobrescreve o anterior (o item antigo nao
+// sera entregue).
+//===================================================
+function	script	F_DRO_GM_BatchRodex	{
+	if (getgmlevel() < 99) {
+		mes "[GM Tools]";
+		mes "Acesso negado.";
+		close;
+	}
+	mes "[GM Batch -> Conta]";
+	mes "Vou marcar um item para entrega no ^FF0000primeiro login^000000 de cada conta existente.";
+	mes "Quem criar conta depois NAO recebe.";
+	next;
+
+	mes "[GM Batch -> Conta]";
+	mes "ID do item:";
+	input .@itemid, 1, 2147483647;
+	if (.@itemid <= 0) close;
+
+	.@name$ = getitemname(.@itemid);
+	if (.@name$ == "" || .@name$ == "null") {
+		mes "[GM Batch -> Conta]";
+		mes "Item ^FF0000" + .@itemid + "^000000 nao encontrado no item_db. Abortado.";
+		close;
+	}
+
+	next;
+	mes "[GM Batch -> Conta]";
+	mes "Quantidade por conta:";
+	input .@qty, 1, 30000;
+	if (.@qty <= 0) close;
+
+	// Conta de quantas contas (distinct account_id em char nao deletado).
+	.@n = query_sql("SELECT COUNT(DISTINCT account_id) FROM `char` WHERE delete_date IS NULL OR delete_date = 0", .@count);
+	if (.@n <= 0 || .@count[0] <= 0) {
+		mes "[GM Batch -> Conta]";
+		mes "Nenhuma conta encontrada no DB. Abortado.";
+		close;
+	}
+	.@accounts = .@count[0];
+
+	// Pendencias previas existem? (informativo apenas — sobrescrever e' o
+	// comportamento desejado: evita inflar contas inativas com itens
+	// acumulados; quem nao logou ate agora perde a entrega anterior.)
+	query_sql("SELECT COUNT(DISTINCT account_id) FROM `acc_reg_num` WHERE `key` = '#DRO_PENDING_ID' AND value > 0", .@dup);
+	.@duplicate = .@dup[0];
+
+	next;
+	mes "[GM Batch -> Conta]";
+	mes "Confirme:";
+	mes "  Item     : ^0000FF" + .@name$ + "^000000 (id " + .@itemid + ")";
+	mes "  Quantia  : ^0000FF" + .@qty + "^000000 por conta";
+	mes "  Contas   : ^0000FF" + .@accounts + "^000000";
+	if (.@duplicate > 0) {
+		mes "  Sobrescreve pendencia anterior em ^0000FF" + .@duplicate + "^000000 conta(s).";
+	}
+	next;
+	if (select("Marcar agora:Cancelar") == 2) close;
+
+	close2;
+	// REPLACE para sobrescrever pendencia existente. Filtra por contas com
+	// pelo menos 1 char vivo (evita inundar contas mortas).
+	query_sql("REPLACE INTO `acc_reg_num` (account_id, `key`, `index`, value) SELECT DISTINCT c.account_id, '#DRO_PENDING_ID', 0, " + .@itemid + " FROM `char` c WHERE c.delete_date IS NULL OR c.delete_date = 0");
+	query_sql("REPLACE INTO `acc_reg_num` (account_id, `key`, `index`, value) SELECT DISTINCT c.account_id, '#DRO_PENDING_QTY', 0, " + .@qty + " FROM `char` c WHERE c.delete_date IS NULL OR c.delete_date = 0");
+	end;
+}
+
+//===================================================
+// DimensionsRO -- entrega da pendencia no primeiro login da conta.
+// Le account vars #DRO_PENDING_ID / #DRO_PENDING_QTY (gravadas pelo
+// F_DRO_GM_BatchRodex), entrega o item ao char que esta logando e
+// zera as flags pra que outros chars da mesma conta nao recebam.
+//===================================================
+-	script	dro_pending_claim	-1,{
+OnPCLoginEvent:
+	if (#DRO_PENDING_ID <= 0) end;
+	.@id = #DRO_PENDING_ID;
+	.@qty = #DRO_PENDING_QTY;
+	#DRO_PENDING_ID = 0;
+	#DRO_PENDING_QTY = 0;
+	if (.@qty <= 0) end;
+	.@name$ = getitemname(.@id);
+	if (.@name$ == "" || .@name$ == "null") {
+		debugmes "[dro_pending_claim] Item invalido " + .@id + " (qty " + .@qty + ") — descartado.";
+		end;
+	}
+	getitem .@id, .@qty;
+	dispbottom "[Equipe DRO] Voce recebeu " + .@qty + "x " + .@name$ + ". Bem-vindo!";
+	end;
 }
 
 //===================================================

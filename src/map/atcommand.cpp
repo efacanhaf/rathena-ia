@@ -11467,10 +11467,12 @@ ACMD_FUNC(macrochecker){
 
 #include <custom/atcommand.inc>
 
-/// Phase 6 — `@hire <job> [tier] [duration_min]`. Sends a HIRE_REQUEST to
-/// ai-server (via char-server). The merc spawns at the player's current map
-/// + cell and follows them until despawn. Defaults: job=Priest(8) tier=2
-/// duration_min=10. Use 0 minutes for "no expiry" (still despawns on logout).
+/// Phase 6 — `@hire [job] [tier] [duration_min] [base_lvl] [job_lvl]`.
+/// Sends a HIRE_REQUEST to ai-server (via char-server). With NO args,
+/// class/level are auto-derived from the player's BaseLevel, matching
+/// the Treinador de Aventureiros NPC bracketing (Acolyte / Priest / HP
+/// / AB) — this is the path the NPC uses. With explicit args, manual
+/// mode is preserved for GM testing.
 ACMD_FUNC(hire){
 	// Phase 6 — mercenary hiring requires being in a party. The merc joins
 	// the party so its UI/HP bar shows up, and so party-only mechanics
@@ -11479,18 +11481,28 @@ ACMD_FUNC(hire){
 		clif_displaymessage(fd, "@hire: voce precisa estar em uma party.");
 		return -1;
 	}
-	int32 job = 8;
-	int32 tier = 2;
-	int32 dur_min = 10;
-	int32 blvl_override = 0;
-	int32 jlvl_override = 0;
+	int32 job = 0, tier = 0, dur_min = 10;
+	int32 blvl_override = 0, jlvl_override = 0;
+	int32 n = 0;
 	if (*message != '\0') {
-		// Permissive parse: accepts 1..5 ints (job, tier, duration, blvl, jlvl).
-		int32 n = sscanf(message, "%d %d %d %d %d", &job, &tier, &dur_min, &blvl_override, &jlvl_override);
+		n = sscanf(message, "%d %d %d %d %d", &job, &tier, &dur_min, &blvl_override, &jlvl_override);
 		if (n < 1) {
-			clif_displaymessage(fd, "Usage: @hire <job_id> [tier 0..2] [duration_min] [base_lvl] [job_lvl]");
+			clif_displaymessage(fd, "Uso: @hire  (auto)  ou  @hire <job_id> [tier 0..2] [duration_min] [base_lvl] [job_lvl]");
 			return -1;
 		}
+	}
+
+	// No args = auto mode (NPC parity). Derive class + level from the
+	// player's BaseLevel using the same bracketing as
+	// npc/custom/dro_adventurer_hire.txt.
+	if (n == 0) {
+		int32 blvl = sd->status.base_level;
+		if (blvl < 40)      { job = 4;    tier = 0; jlvl_override = 50; }
+		else if (blvl < 70) { job = 8;    tier = 1; jlvl_override = 50; }
+		else if (blvl < 99) { job = 4014; tier = 1; jlvl_override = 70; }
+		else                { job = 4063; tier = 2; jlvl_override = 70; }
+		blvl_override = blvl;
+		dur_min = 0;	// no-arg @hire = sem expiracao, fica ate @dismiss
 	}
 	if (tier < 0 || tier > 2) tier = 2;
 	if (dur_min < 0) dur_min = 0;
@@ -11503,9 +11515,14 @@ ACMD_FUNC(hire){
 		clif_displaymessage(fd, "@hire: ai-server is offline.");
 		return -1;
 	}
-	char msg[120];
-	safesnprintf(msg, sizeof(msg), "@hire: requested merc job=%d tier=%d dur=%dmin.", job, tier, dur_min);
-	clif_displaymessage(fd, msg);
+	// Phase 6 — soft-dedupe variable used by the NPC and Voucher_Adventurer
+	// script. Optimistic: ai-server's anti-stack is the real authority, but
+	// this gives the script side fast feedback without a round-trip.
+	if (dur_ms > 0)
+		pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"),
+			(int)time(nullptr) + (int)(dur_ms / 1000));
+	// Phase 6 — no success chat line. The NPC shows its own confirmation
+	// and direct @hire users see the merc spawn shortly after.
 	return 0;
 }
 
@@ -11518,7 +11535,10 @@ ACMD_FUNC(dismiss){
 		clif_displaymessage(fd, "@dismiss: ai-server is offline.");
 		return -1;
 	}
-	clif_displaymessage(fd, "@dismiss: requested.");
+	// Phase 6 — clear the soft-dedupe variable used by the NPC and the
+	// Voucher_Adventurer script so the player can re-hire immediately.
+	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), 0);
+	clif_displaymessage(fd, "@dismiss: aventureiro dispensado.");
 	return 0;
 }
 
