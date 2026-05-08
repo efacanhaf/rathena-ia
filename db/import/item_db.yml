@@ -210,6 +210,25 @@ Body:
     AegisName: P_Booster_Call_Package
     EquipLevelMax: 275
 
+# Voucher de Aventureiro — moeda de troca no NPC Treinador de
+# Aventureiros (prt_in 44,113). 1 voucher = 60 minutos do servico,
+# sem custo de zeny. NPC valida party + lider, deriva classe/nivel,
+# consome o voucher e dispara @hire.
+  - Id: 1270150
+    AegisName: Voucher_Adventurer
+    Name: Voucher de Aventureiro
+    Type: Etc
+    Weight: 10
+    Flags:
+      UniqueId: true
+    Trade:
+      NoDrop: true
+      NoTrade: true
+      TradePartner: true
+      NoSell: true
+      NoMail: true
+      NoAuction: true
+
 #Body:
 # THQ Quest Items
 #=============================================================

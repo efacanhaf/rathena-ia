@@ -16,6 +16,7 @@
 #include <common/utils.hpp>
 
 #include "achievement.hpp"
+#include "aichrif.hpp"     // aishell_is_shell()
 #include "atcommand.hpp"	//msg_txt()
 #include "battle.hpp"
 #include "chrif.hpp" // charserver_name
@@ -637,6 +638,65 @@ void party_member_joined( map_session_data& sd ){
 		sd.status.party_id = 0; //He does not belongs to the party really?
 }
 
+/// Phase 6 — local-only party join for ai-shell mercenaries. Bypasses
+/// intif_party_addmember (shells have no DB row, char-server would
+/// reject) and writes directly into the party's in-memory roster, then
+/// broadcasts to all members so the client UI updates.
+bool party_add_aishell(map_session_data& shell_sd, int32 party_id){
+	struct party_data* p = party_search(party_id);
+	if (p == nullptr) return false;
+	if (shell_sd.status.party_id != 0) return false;
+
+	int32 i;
+	ARR_FIND(0, MAX_PARTY, i, p->party.member[i].account_id == 0);
+	if (i >= MAX_PARTY) return false; // full
+
+	struct party_member& m = p->party.member[i];
+	m.account_id = shell_sd.status.account_id;
+	m.char_id    = shell_sd.status.char_id;
+	safestrncpy(m.name, shell_sd.status.name, NAME_LENGTH);
+	m.class_     = shell_sd.status.class_;
+	safestrncpy(m.map, mapindex_id2name(shell_sd.mapindex), sizeof(m.map));
+	m.lv         = (uint16)shell_sd.status.base_level;
+	m.online     = 1;
+	m.leader     = 0;
+	p->data[i].sd = &shell_sd;
+	p->data[i].x = shell_sd.x;
+	p->data[i].y = shell_sd.y;
+	shell_sd.status.party_id = party_id;
+	p->party.count++;
+
+	clif_party_member_info(*p, shell_sd);
+	clif_party_info(*p, &shell_sd);
+	clif_party_hp(shell_sd);
+	clif_party_xy(shell_sd);
+	return true;
+}
+
+void party_remove_aishell(int32 party_id, uint32 account_id){
+	struct party_data* p = party_search(party_id);
+	if (p == nullptr) return;
+	int32 i;
+	ARR_FIND(0, MAX_PARTY, i, p->party.member[i].account_id == account_id);
+	if (i >= MAX_PARTY) return;
+
+	char leaver_name[NAME_LENGTH];
+	safestrncpy(leaver_name, p->party.member[i].name, NAME_LENGTH);
+
+	// Pick any online party member as the broadcast source (leaver is
+	// about to be removed from data[i]).
+	map_session_data* anchor = party_getavailablesd(p);
+	memset(&p->party.member[i], 0, sizeof(p->party.member[i]));
+	p->data[i].sd = nullptr;
+	p->data[i].x = 0;
+	p->data[i].y = 0;
+	if (p->party.count > 0) p->party.count--;
+	if (anchor != nullptr) {
+		clif_party_withdraw(*anchor, account_id, leaver_name,
+			PARTY_MEMBER_WITHDRAW_LEAVE, PARTY);
+	}
+}
+
 /// Invoked (from char-server) when a new member is added to the party.
 /// flag: 0-success, 1-failure
 int32 party_member_added(int32 party_id,uint32 account_id,uint32 char_id, int32 flag)
@@ -1251,6 +1311,9 @@ void party_exp_share(struct party_data* p, block_list* src, t_exp base_exp, t_ex
 	// count the number of players eligible for exp sharing
 	for (i = c = 0; i < MAX_PARTY; i++) {
 		if( (sd[c] = p->data[i].sd) == nullptr || sd[c]->m != src->m || pc_isdead(sd[c]) || (battle_config.idle_no_share && pc_isidle_party(sd[c])) )
+			continue;
+		// Phase 6 — ai-shell mercenaries don't take party EXP.
+		if (aishell_is_shell(sd[c]->status.account_id))
 			continue;
 		c++;
 	}

@@ -1,0 +1,491 @@
+# DimensionsRO ia-server - Phase 4 per-job, per-tier shell profiles.
+#
+# Tiers:
+#   T0 = town (base 30, soft gear)
+#   T1 = field (base 60, mid gear)
+#   T2 = dungeon (base 90, end gear)
+#
+# Stats: BaseLevel + JobLevel + Str/Agi/Vit/Int/Dex/Luk + Speed.
+# Equipment: Weapon/HandR, Shield/HandL, HeadTop/Mid/Low, Armor, Garment,
+# Shoes, AccR, AccL - by item nameid.
+#
+# Map-server feeds these into status_calc_pc - same path real players use
+# after pc_authok. Final HP/SP/Atk/Hit/Flee/Def/MAtk/MDef are derived from
+# class formulas + equipped items, NOT hardcoded here.
+#
+# Phase 5 — Equipment slots accept EITHER a single nameid (current
+# behavior) or a YAML sequence (gear pool, random pick per spawn):
+#   Weapon: 1158
+#   Weapon: [1158, 1162, 1170]
+# Use 0 in a sequence to mean "no item in that slot" — useful for slots
+# that should be empty for some shells (e.g. shield: [1102, 0]).
+#
+# Equipment IDs mirror what the Mega Booster Support NPC
+# (npc/custom/dro_starter_kit.txt) hands to real players, so a shell is
+# stat-equivalent to a player who just collected the kit.
+
+Header:
+  Type: AI_PROFILE_DB
+  Version: 2
+
+Defaults:
+  # Generic kit per tier for jobs without explicit T0/T1/T2 - mirrors the
+  # Mega Booster Support 1st/2nd/Trans kits but with safe all-class items.
+  T0:
+    BaseLevel: 30
+    JobLevel: 25
+    Str: 25
+    Agi: 20
+    Vit: 20
+    Int: 15
+    Dex: 25
+    Luk: 10
+    Speed: 150
+    Equip: { Armor: 2305, Shoes: 2401, AccR: 2607 }   # Adventurer Suit + Hood + Sandals + Clip
+  T1:
+    BaseLevel: 60
+    JobLevel: 45
+    Str: 50
+    Agi: 40
+    Vit: 40
+    Int: 30
+    Dex: 50
+    Luk: 20
+    Speed: 150
+    Equip: { Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }   # Coat + Muffler + Shoes + Glove
+  T2:
+    BaseLevel: 90
+    JobLevel: 60
+    Str: 80
+    Agi: 65
+    Vit: 65
+    Int: 50
+    Dex: 80
+    Luk: 35
+    Speed: 150
+    Equip: { Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 } # Coat + Muffler + Shoes + Glove
+
+Body:
+  # ===== Novice family - 1st-class kit =====
+  - Job: 0  # Novice — Mega Booster 1st-class kit
+    T0:
+      BaseLevel: 5
+      JobLevel: 5
+      Str: 5
+      Agi: 5
+      Vit: 5
+      Int: 5
+      Dex: 5
+      Luk: 5
+      Equip: { Weapon: 1201, Armor: 2305, Garment: 2502, Shoes: 2401, AccR: 2607 } # Knife + Adventurer Suit + Hood + Sandals + Clip
+  - Job: 4001  # High Novice — Mega Booster 1st-class kit
+    T0:
+      BaseLevel: 10
+      JobLevel: 10
+      Str: 10
+      Agi: 10
+      Vit: 10
+      Int: 10
+      Dex: 10
+      Luk: 10
+      Equip: { Weapon: 1201, Armor: 2305, Garment: 2502, Shoes: 2401, AccR: 2607 } # Knife + Adventurer Suit + Hood + Sandals + Clip
+  - Job: 23  # Super Novice — Mega Booster 1st-class kit
+    T0:
+      BaseLevel: 30
+      JobLevel: 30
+      Str: 25
+      Agi: 20
+      Vit: 20
+      Int: 25
+      Dex: 25
+      Luk: 15
+      Equip: { Weapon: 1201, Armor: 2305, Garment: 2502, Shoes: 2401, AccR: 2607 } # Knife + Adventurer Suit + Hood + Sandals + Clip
+    T1:
+      BaseLevel: 60
+      JobLevel: 50
+      Str: 50
+      Agi: 40
+      Vit: 40
+      Int: 50
+      Dex: 50
+      Luk: 30
+      Equip: { Weapon: 1106, Armor: 2310, Shoes: 2403, AccR: 2604 }
+
+  # ===== Swordsman line =====
+  - Job: 1  # Swordsman
+    T0:
+      BaseLevel: 30
+      JobLevel: 25
+      Str: 35
+      Agi: 18
+      Vit: 30
+      Int: 5
+      Dex: 18
+      Luk: 8
+      Equip: { Weapon: 1106, Armor: 2305 }   # Falchion + Adventurer Suit
+  - Job: 4002  # High Swordsman
+    T0:
+      BaseLevel: 35
+      JobLevel: 30
+      Str: 40
+      Agi: 22
+      Vit: 35
+      Int: 8
+      Dex: 22
+      Luk: 10
+      Equip: { Weapon: 1106, Armor: 2305 }   # Falchion + Adventurer Suit
+  - Job: 7  # Knight — gear pools demo (Phase 5).
+    # Any Equip slot accepts either a scalar (one nameid) or a sequence
+    # (random pick at spawn time). Below: T1 Knights spawn with one of 3
+    # one-handed swords; T2 with one of 4 two-handers + maybe a shield.
+    T1:
+      BaseLevel: 65
+      JobLevel: 45
+      Str: 70
+      Agi: 35
+      Vit: 60
+      Int: 10
+      Dex: 40
+      Luk: 15
+      Equip:
+        Weapon: [1158, 1162, 1170]   # Tsurugi / Haedonggum / Saber
+        HandL: [2102, 2105, 0]       # Buckler / Stone Buckler / no shield
+        Armor: 2310
+        Garment: 2503
+        Shoes: 2403
+        AccR: 2604
+    T2:
+      BaseLevel: 95
+      JobLevel: 60
+      Str: 95
+      Agi: 55
+      Vit: 90
+      Int: 20
+      Dex: 65
+      Luk: 25
+      Equip:
+        Weapon: [1158, 1163, 1167, 1171]   # mixed 1H/2H — Tsurugi / Flamberge / Claymore / Bastard Sword
+        Armor: 2310
+        Garment: 2503
+        Shoes: 2403
+        AccR: 2604
+  - Job: 4008  # Lord Knight
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 80
+      Agi: 40
+      Vit: 70
+      Int: 15
+      Dex: 50
+      Luk: 20
+      Equip: { Weapon: 1158, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 99
+      Agi: 60
+      Vit: 99
+      Int: 25
+      Dex: 70
+      Luk: 30
+      Equip: { Weapon: 1158, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 14  # Crusader
+    T1:
+      BaseLevel: 65
+      JobLevel: 45
+      Str: 60
+      Agi: 30
+      Vit: 70
+      Int: 30
+      Dex: 40
+      Luk: 20
+      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 95
+      JobLevel: 60
+      Str: 80
+      Agi: 50
+      Vit: 99
+      Int: 60
+      Dex: 65
+      Luk: 35
+      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4015  # Paladin
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 70
+      Agi: 35
+      Vit: 80
+      Int: 40
+      Dex: 50
+      Luk: 25
+      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 92
+      Agi: 55
+      Vit: 99
+      Int: 75
+      Dex: 70
+      Luk: 40
+      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+
+  # ===== Mage line =====
+  - Job: 2  # Mage
+    T0:
+      BaseLevel: 30
+      JobLevel: 25
+      Str: 5
+      Agi: 15
+      Vit: 12
+      Int: 40
+      Dex: 25
+      Luk: 10
+      Equip: { Weapon: 1604, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 4003  # High Mage
+    T0:
+      BaseLevel: 35
+      JobLevel: 30
+      Str: 8
+      Agi: 18
+      Vit: 15
+      Int: 45
+      Dex: 30
+      Luk: 12
+      Equip: { Weapon: 1604, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 4010  # High Wizard
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 10
+      Agi: 35
+      Vit: 30
+      Int: 90
+      Dex: 70
+      Luk: 25
+      Equip: { Weapon: 1613, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 15
+      Agi: 50
+      Vit: 45
+      Int: 99
+      Dex: 95
+      Luk: 35
+      Equip: { Weapon: 1613, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  # Phase 6 — Acolyte → Priest → High Priest → Arch Bishop. Mercenary
+  # support kit; tiers map to who-the-player-can-hire. Stats lean
+  # INT/DEX (heal power + cast speed) with enough VIT to survive a hit.
+  # Equipment is generic Holy Stick / Saint Robe class; gear pools
+  # come later in Phase B.
+  - Job: 4  # Acolyte
+    T0:
+      BaseLevel: 35
+      JobLevel: 40
+      Str: 10
+      Agi: 18
+      Vit: 22
+      Int: 38
+      Dex: 30
+      Luk: 12
+      Equip: { Weapon: 1504, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 8  # Priest
+    T1:
+      BaseLevel: 60
+      JobLevel: 45
+      Str: 12
+      Agi: 25
+      Vit: 35
+      Int: 70
+      Dex: 55
+      Luk: 20
+      Equip: { Weapon: 1518, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 90
+      JobLevel: 60
+      Str: 18
+      Agi: 40
+      Vit: 50
+      Int: 95
+      Dex: 80
+      Luk: 30
+      Equip: { Weapon: 1524, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4014  # High Priest
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 15
+      Agi: 35
+      Vit: 45
+      Int: 85
+      Dex: 70
+      Luk: 25
+      Equip: { Weapon: 1524, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 20
+      Agi: 50
+      Vit: 60
+      Int: 99
+      Dex: 90
+      Luk: 35
+      Equip: { Weapon: 1530, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4063  # Arch Bishop
+    T2:
+      BaseLevel: 130
+      JobLevel: 50
+      Str: 30
+      Agi: 60
+      Vit: 70
+      Int: 120
+      Dex: 110
+      Luk: 50
+      Equip: { Weapon: 1530, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 16  # Sage
+    T1:
+      BaseLevel: 65
+      JobLevel: 45
+      Str: 15
+      Agi: 30
+      Vit: 35
+      Int: 80
+      Dex: 65
+      Luk: 25
+      Equip: { Weapon: 1551, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 95
+      JobLevel: 60
+      Str: 25
+      Agi: 45
+      Vit: 50
+      Int: 99
+      Dex: 90
+      Luk: 35
+      Equip: { Weapon: 1551, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4017  # Professor
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 20
+      Agi: 35
+      Vit: 40
+      Int: 90
+      Dex: 75
+      Luk: 30
+      Equip: { Weapon: 1551, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 30
+      Agi: 55
+      Vit: 60
+      Int: 99
+      Dex: 99
+      Luk: 45
+      Equip: { Weapon: 1551, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+
+  # ===== Archer line =====
+  - Job: 3  # Archer
+    T0:
+      BaseLevel: 30
+      JobLevel: 25
+      Str: 18
+      Agi: 35
+      Vit: 18
+      Int: 12
+      Dex: 45
+      Luk: 15
+      Equip: { Weapon: 1705, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 11  # Hunter
+    T1:
+      BaseLevel: 65
+      JobLevel: 45
+      Str: 30
+      Agi: 65
+      Vit: 30
+      Int: 25
+      Dex: 80
+      Luk: 25
+      Equip: { Weapon: 1718, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 95
+      JobLevel: 60
+      Str: 45
+      Agi: 90
+      Vit: 50
+      Int: 35
+      Dex: 99
+      Luk: 40
+      Equip: { Weapon: 1718, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4012  # Sniper
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 35
+      Agi: 75
+      Vit: 35
+      Int: 30
+      Dex: 90
+      Luk: 30
+      Equip: { Weapon: 1718, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 50
+      Agi: 99
+      Vit: 60
+      Int: 45
+      Dex: 99
+      Luk: 50
+      Equip: { Weapon: 1718, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+
+  # ===== Merchant line - vendors in towns =====
+  - Job: 5  # Merchant
+    T0:
+      BaseLevel: 30
+      JobLevel: 25
+      Str: 30
+      Agi: 18
+      Vit: 25
+      Int: 10
+      Dex: 30
+      Luk: 18
+      Equip: { Weapon: 1352, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 4006  # High Merchant
+    T0:
+      BaseLevel: 35
+      JobLevel: 30
+      Str: 35
+      Agi: 22
+      Vit: 30
+      Int: 12
+      Dex: 35
+      Luk: 22
+      Equip: { Weapon: 1352, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 10  # Blacksmith
+    T0:
+      BaseLevel: 35
+      JobLevel: 30
+      Str: 40
+      Agi: 20
+      Vit: 30
+      Int: 15
+      Dex: 40
+      Luk: 20
+      Equip: { Weapon: 1361, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4011  # Whitesmith
+    T0:
+      BaseLevel: 40
+      JobLevel: 35
+      Str: 45
+      Agi: 25
+      Vit: 35
+      Int: 18
+      Dex: 45
+      Luk: 25
+      Equip: { Weapon: 1361, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }

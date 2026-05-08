@@ -1,0 +1,154 @@
+//===== DimensionsRO ==========================================
+//= Treinador de Aventureiros (Phase 6 — ai-server hired support shells)
+//===== Description: =========================================
+//= NPC para contratar um Aventureiro de suporte (linha
+//= Acolyte/Priest/High Priest/Arch Bishop). O Aventureiro e' um
+//= BL_PC controlado pelo ai-server: segue o player, cura,
+//= buffa, cura status, faz Lex Aeterna em alvos do owner.
+//=
+//= Regras:
+//=  1) So' o LIDER da party pode contratar.
+//=  2) O nivel do Aventureiro e' derivado do nivel do lider
+//=     (nao ha' escolha de tier — o player so escolhe a duracao).
+//=  3) Preco escala com o nivel:
+//=        zeny/min = adv_lvl * 100
+//=     Ex: AB lvl 130 por 60min = 130 * 100 * 60 = 780,000z.
+//=  4) Apos confirmar: cobra zeny, roda @hire, Aventureiro spawna em
+//=     1-2s, entra na party automaticamente, segue/cura/buffa.
+//=  5) Item Voucher_Adventurer (1270150) e' aceito como moeda de
+//=     troca: 1 voucher = 60 minutos sem custo de zeny.
+//============================================================
+
+prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
+	mes "[Treinador de Aventureiros]";
+	mes "Ola, aventureiro. Veio buscar um companheiro de jornada?";
+	mes " ";
+	mes "Tenho uns rapazes e mocas dispostos a te seguir, te curar e te abencoar.";
+	mes "(eles nao atacam por conta propria, mas seguram a barra)";
+	next;
+
+	// Party requirement — o Aventureiro entra na party do owner; sem party
+	// nao ha onde encaixa-lo.
+	if (getcharid(1) == 0) {
+		mes "[Treinador de Aventureiros]";
+		mes "Voce precisa estar em uma ^FF0000party^000000 para contratar um Aventureiro.";
+		mes " ";
+		mes "Crie uma party (^FF0000/organize <nome>^000000) ou junte-se a uma e volte aqui.";
+		close;
+	}
+
+	// Apenas o lider da party pode contratar.
+	if (!is_party_leader()) {
+		mes "[Treinador de Aventureiros]";
+		mes "So o ^FF0000lider da party^000000 pode contratar um Aventureiro.";
+		mes " ";
+		mes "Peca para o lider conversar comigo.";
+		close;
+	}
+
+	// Soft-dedupe: variavel persistente por personagem evita contratar
+	// um segundo Aventureiro enquanto o primeiro ainda esta ativo. O
+	// ai-server ja faz anti-stack interno; isso so existe pra dar
+	// feedback claro ao player antes de cobrar zeny.
+	if (ADV_HIRED_UNTIL > gettimetick(2)) {
+		.@left = (ADV_HIRED_UNTIL - gettimetick(2)) / 60 + 1;
+		mes "[Treinador de Aventureiros]";
+		mes "Voce ja tem um Aventureiro contratado.";
+		mes "Restam ^0000FF" + .@left + " minuto(s)^000000.";
+		mes " ";
+		mes "Use ^FF0000@dismiss^000000 para dispensa-lo antes de contratar outro.";
+		close;
+	}
+
+	.@blvl = BaseLevel;
+
+	// Classe automatica pelo nivel do lider; o nivel do Aventureiro casa
+	// com o nivel do lider (ai-server escala via base_level_override).
+	//   <  40  -> Acolyte
+	//   40-69  -> Priest
+	//   70-98  -> High Priest
+	//   >= 99  -> Arch Bishop
+	if (.@blvl < 40) {
+		.@job = 4;     .@tier = 0;
+		.@cls$ = "Acolyte";
+		.@jlvl = 50;	// Acolyte job max
+	} else if (.@blvl < 70) {
+		.@job = 8;     .@tier = 1;
+		.@cls$ = "Priest";
+		.@jlvl = 50;	// Priest job max
+	} else if (.@blvl < 99) {
+		.@job = 4014;  .@tier = 1;
+		.@cls$ = "High Priest";
+		.@jlvl = 70;	// HP job max
+	} else {
+		.@job = 4063;  .@tier = 2;
+		.@cls$ = "Arch Bishop";
+		.@jlvl = 70;	// AB job max
+	}
+	.@adv_lvl = .@blvl;	// Aventureiro nasce no mesmo nivel do lider
+
+	mes "[Treinador de Aventureiros]";
+	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 tao forte quanto voce.";
+	mes " ";
+	mes "Por quanto tempo voce quer a companhia dele?";
+	next;
+
+	.@cost_5  = .@adv_lvl * 100 * 5;
+	.@cost_30 = .@adv_lvl * 100 * 30;
+	.@cost_60 = .@adv_lvl * 100 * 60;
+	// Se o player tem voucher, a opcao 60min troca o preco em zeny por
+	// "1 Voucher de Aventureiro" (consome o item ao confirmar).
+	.@has_voucher = (countitem(1270150) > 0);
+	.@label_60$ = .@has_voucher
+		? "60 minutos (^990099 1 Voucher de Aventureiro^000000)"
+		: "60 minutos (" + .@cost_60 + "z)";
+
+	.@dur = select(
+		"5 minutos (" + .@cost_5  + "z)",
+		"30 minutos (" + .@cost_30 + "z)",
+		.@label_60$,
+		"Cancelar"
+	);
+
+	if (.@dur == 4) close;
+
+	setarray .@minutes[0], 5, 30, 60;
+	.@min   = .@minutes[.@dur - 1];
+	// Voucher so' substitui o pagamento na opcao 60min.
+	.@pay_voucher = (.@dur == 3 && .@has_voucher);
+	.@price = .@pay_voucher ? 0 : (.@adv_lvl * 100 * .@min);
+
+	if (!.@pay_voucher && Zeny < .@price) {
+		mes "[Treinador de Aventureiros]";
+		mes "Zeny insuficiente. Custa ^0000FF" + .@price + "z^000000.";
+		close;
+	}
+
+	mes "[Treinador de Aventureiros]";
+	if (.@pay_voucher) {
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos.";
+		mes "Em troca: ^FF00001 Voucher de Aventureiro^000000.";
+	} else {
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos.";
+		mes "Em troca: ^0000FF" + .@price + "z^000000.";
+	}
+	next;
+	if (select("Sim:Nao") == 2) close;
+
+	if (.@pay_voucher) {
+		// Re-checa contagem entre os menus (player pode ter dado trade).
+		if (countitem(1270150) < 1) {
+			mes "[Treinador de Aventureiros]";
+			mes "Voucher sumiu da sua bolsa. Volte quando tiver um.";
+			close;
+		}
+		delitem 1270150, 1;
+	} else {
+		Zeny -= .@price;
+	}
+	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl;
+	ADV_HIRED_UNTIL = gettimetick(2) + .@min * 60;
+	mes "[Treinador de Aventureiros]";
+	mes "Que a luz te guie. Use ^FF0000@dismiss^000000 pra dispensa-lo a qualquer momento.";
+	close;
+}
