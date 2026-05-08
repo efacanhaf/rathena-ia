@@ -22,6 +22,7 @@
 #include <common/utils.hpp>
 
 #include "achievement.hpp"
+#include "aichrif.hpp"	// aishell_is_shell()
 #include "battle.hpp"
 #include "battleground.hpp"
 #include "chrif.hpp"
@@ -8248,6 +8249,12 @@ bool skill_check_condition_castbegin( map_session_data& sd, uint16 skill_id, uin
 	if (sd.chatID)
 		return false;
 
+	// Phase 6 — ai-shell mercenaries don't carry inventory; skip item /
+	// gemstone / ammo requirements so Resurrection (Blue Gemstone) etc.
+	// don't silently fail. SP cost still applies via the regular flow.
+	if (aishell_is_shell((uint32)sd.status.account_id))
+		return true;
+
 	if( pc_has_permission(&sd, PC_PERM_SKILL_UNCONDITIONAL) && sd.skillitem != skill_id )
 	{	//GMs don't override the skillItem check, otherwise they can use items without them being consumed! [Skotlex]
 		sd.state.arrow_atk = skill_get_ammotype(skill_id)?1:0; //Need to do arrow state check.
@@ -9337,6 +9344,11 @@ bool skill_check_condition_castend( map_session_data& sd, uint16 skill_id, uint1
 
 	if( sd.chatID )
 		return false;
+
+	// Phase 6 — ai-shell mercenaries skip item-required checks at cast end
+	// too (gemstone for Resurrection, etc).
+	if (aishell_is_shell((uint32)sd.status.account_id))
+		return true;
 
 	if( pc_has_permission(&sd, PC_PERM_SKILL_UNCONDITIONAL) && sd.skillitem != skill_id ) {
 		//GMs don't override the skillItem check, otherwise they can use items without them being consumed! [Skotlex]

@@ -31,6 +31,7 @@
 #include "cashshop.hpp"
 #include "channel.hpp"
 #include "chat.hpp"
+#include "aichrif.hpp"
 #include "chrif.hpp"
 #include "clan.hpp"
 #include "clif.hpp"
@@ -5043,6 +5044,7 @@ void MapServer::finalize(){
 	do_final_admin_socket();
 	do_final_atcommand();
 	do_final_battle();
+	do_final_map_aichrif();
 	do_final_chrif();
 	do_final_clan();
 #ifndef MAP_GENERATOR
@@ -5421,6 +5423,7 @@ bool MapServer::initialize( int32 argc, char *argv[] ){
 	do_init_battle();
 	do_init_instance();
 	do_init_chrif();
+	do_init_map_aichrif();
 	do_init_clan();
 #ifndef MAP_GENERATOR
 	do_init_clif();

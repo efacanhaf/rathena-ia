@@ -3,6 +3,8 @@
 
 #include "chrif.hpp"
 
+#include "aichrif.hpp"
+
 #include <cstdlib>
 #include <cstring>
 
@@ -1744,6 +1746,14 @@ int32 chrif_parse(int32 fd) {
 
 	while ( RFIFOREST(fd) >= 2 ) {
 		int32 cmd = RFIFOW(fd,0);
+		// AI peer packets (DimensionsRO ia-server) live outside packet_len_table.
+		// Try them first; aichrif decides whether to consume the packet.
+		{
+			int32 r = aichrif_try_handle(fd);
+			if (r == 1) continue; // packet consumed
+			if (r == 0) return 0; // need more bytes
+			// r == -1: not an AI packet, fall through.
+		}
 		if (cmd < 0x2af8 || cmd >= 0x2af8 + ARRAYLENGTH(packet_len_table) || packet_len_table[cmd-0x2af8] == 0) {
 			int32 r = intif_parse(fd); // Passed on to the intif
 

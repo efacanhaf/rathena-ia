@@ -1,0 +1,8 @@
+// Local overrides for ai_athena.conf. Created by `make import`.
+// Anything set here wins over conf/ai_athena.conf.
+//
+// Examples:
+// char_server_ip: 10.0.0.42
+// char_server_port: 7270
+// ai_userid: dro_ai
+// ai_passwd: change_me

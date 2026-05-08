@@ -19,6 +19,7 @@
 #include <common/utilities.hpp>
 #include <common/utils.hpp>
 
+#include "aichrif.hpp"	// aishell_is_shell()
 #include "battle.hpp"
 #include "chat.hpp"
 #include "clif.hpp"
@@ -1897,6 +1898,13 @@ int32 npc_touch_areanpc(map_session_data* sd, int16 m, int16 x, int16 y, npc_dat
 {
 	nullpo_retr(0, sd);
 	nullpo_retr(0, nd);
+
+	// Phase 6 — ai-shell mercenaries shouldn't trigger portals or
+	// OnTouch scripts; they only follow the owner. The follow_timer
+	// drives cross-map movement via WARP packets directly, so any
+	// "warp via portal walk" would just yank them off the owner's path.
+	if (aishell_is_shell((uint32)sd->status.account_id))
+		return 1;
 
 	if (nd->is_invisible)
 		return 1; // a npc was found, but it is disabled

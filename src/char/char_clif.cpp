@@ -23,6 +23,7 @@
 #include <common/utils.hpp>
 
 #include "char.hpp"
+#include "char_aif.hpp"
 #include "char_logif.hpp"
 #include "char_mapif.hpp"
 #include "inter.hpp"
@@ -1670,6 +1671,8 @@ int32 chclif_parse(int32 fd) {
 				case HEADER_CH_CHARLIST_REQ:
 				// Connect of map-server
 				case 0x2af8:
+				// Connect of ai-server
+				case 0x2b30:
 					break;
 
 				// Before processing any other packets, do a few checks
@@ -1703,6 +1706,32 @@ int32 chclif_parse(int32 fd) {
 			case 0x65: next=chclif_parse_reqtoconnect(fd,sd,ipl); break;
 			// login as map-server
 			case 0x2af8: chclif_parse_maplogin(fd); return 0; // avoid processing of followup packets here
+			// login as ai-server (DimensionsRO ia-server peer)
+			case 0x2b30: {
+				if( RFIFOREST(fd) < 60 ) return 0;
+				ShowStatus("ai-server: handshake received from %s.\n", ip2str( ipl, nullptr ));
+				if (ai_server_fd >= 0 && ai_server_fd != fd) {
+					// already have a peer — reject the new one
+					WFIFOHEAD(fd, 3);
+					WFIFOW(fd, 0) = 0x2b31;
+					WFIFOB(fd, 2) = 1; // duplicate
+					WFIFOSET(fd, 3);
+					RFIFOSKIP(fd, 60);
+					set_eof(fd);
+					return 0;
+				}
+				// 0x2b31 <errCode>.B  — accept all (Phase 0); credentials check comes in Phase 1
+				WFIFOHEAD(fd, 3);
+				WFIFOW(fd, 0) = 0x2b31;
+				WFIFOB(fd, 2) = 0;
+				WFIFOSET(fd, 3);
+				session[fd]->flag.server = 1;
+				realloc_fifo(fd, FIFOSIZE_SERVERLINK, FIFOSIZE_SERVERLINK);
+				ai_server_fd = fd;
+				session[fd]->func_parse = chaif_parse;
+				RFIFOSKIP(fd, 60);
+				return 0;
+			}
 			default:
 				if( !char_packet_db.handle( fd, *sd ) ){
 					return 0;

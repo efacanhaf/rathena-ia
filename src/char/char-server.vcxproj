@@ -187,6 +187,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="char.hpp" />
+    <ClInclude Include="char_aif.hpp" />
     <ClInclude Include="char_clif.hpp" />
     <ClInclude Include="char_cnslif.hpp" />
     <ClInclude Include="char_logif.hpp" />
@@ -207,6 +208,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="char.cpp" />
+    <ClCompile Include="char_aif.cpp" />
     <ClCompile Include="char_clif.cpp" />
     <ClCompile Include="char_cnslif.cpp" />
     <ClCompile Include="char_logif.cpp" />

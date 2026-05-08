@@ -62,6 +62,14 @@ struct party_data* party_searchname(const char* str);
 int32 party_getmemberid(const party_data* p, const map_session_data* sd);
 map_session_data* party_getavailablesd(const party_data *p);
 
+/// Phase 6 — local-only party join for ai-shell mercenaries. Bypasses the
+/// char-server intif flow (shells have no DB row) and writes directly into
+/// the party data + clif-broadcasts to all members. Returns true on success.
+/// Skipped silently if the party is full or the shell already has a party.
+bool party_add_aishell(map_session_data& shell_sd, int32 party_id);
+/// Symmetric remove. Called from aishell_destroy.
+void party_remove_aishell(int32 party_id, uint32 account_id);
+
 int32 party_create( map_session_data& sd, char *name, int32 item, int32 item2 );
 void party_created(uint32 account_id,uint32 char_id,int32 fail,int32 party_id,char *name);
 int32 party_request_info(int32 party_id, uint32 char_id);

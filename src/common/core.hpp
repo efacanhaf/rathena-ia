@@ -53,7 +53,8 @@ enum class e_core_type{
 	CHARACTER,
 	MAP,
 	TOOL,
-	WEB
+	WEB,
+	AI
 };
 
 class Core{
