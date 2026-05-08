@@ -8,6 +8,23 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-05-08
 
+### Adicionado — Valkyrie (Pular Episódios)
+
+- **Novo NPC: Valkyrie** (prt_cas 373,77 — Castelo de Prontera). Aceita
+  os **Passes de Episódio** (oficiais kRO/iRO) e marca todas as quests do
+  episódio correspondente como concluídas, destravando NPCs, dungeons,
+  shops e instâncias gateadas.
+- Tickets aceitos: **Passe Ep 14** (Lighthalzen, Bifrost, Eclage, Dewata,
+  Malangdo, Malaya), **Passe Ep 15** (Phantasmagorika, Reload), **Passe
+  Ep 16** (Banquete dos Heróis, Charleston/Verus) e **Passe Ep 17**
+  (Terra Gloria/Illusion; quando 17.2 estiver disponível, o mesmo passe
+  cobrirá Mansion da Tragédia).
+- O **skip não concede EXP, drops ou recompensas** das quests puladas —
+  apenas marca como completas. Funciona **por personagem** (cada char usa
+  seu próprio passe).
+- Custo: **1 passe** por uso. A obtenção dos passes será disponibilizada
+  separadamente em update futuro.
+
 ### Adicionado — Sistema de Aventureiros
 
 - **Novo NPC: Treinador de Aventureiros** (prt_in 44,113). O líder da party
