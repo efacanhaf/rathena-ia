@@ -40,13 +40,13 @@ jobs:
 
       - name: Verify binaries
         run: |
-          ls -la login-server char-server map-server web-server
+          ls -la login-server char-server map-server web-server ai-server
           ldd login-server
 
       - name: Tarball binaries
         run: |
           tar czf rathena-ol9-x86_64.tar.gz \
-            login-server char-server map-server web-server
+            login-server char-server map-server web-server ai-server
 
       - uses: actions/upload-artifact@v4
         with:

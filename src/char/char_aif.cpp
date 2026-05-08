@@ -3,6 +3,8 @@
 
 #include "char_aif.hpp"
 
+#include <cstring>
+
 #include <common/cbasetypes.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
