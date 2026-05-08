@@ -22,7 +22,14 @@ include_directories( ${INCLUDE_DIRS} )
 
 add_executable( ai-server ${SOURCE_FILES} )
 add_dependencies( ai-server ${DEPENDENCIES} )
-target_link_libraries( ai-server ${LIBRARIES} ${DEPENDENCIES} )
+# UNIX ld is single-pass; ai-server.cpp doesn't directly reference Sql_Init
+# (defined in common, used by common_base/core.cpp), so wrap deps in
+# --start-group/--end-group so the linker can rescan to resolve cycles.
+if( UNIX )
+	target_link_libraries( ai-server ${LIBRARIES} -Wl,--start-group ${DEPENDENCIES} -Wl,--end-group )
+else()
+	target_link_libraries( ai-server ${LIBRARIES} ${DEPENDENCIES} )
+endif()
 set_target_properties( ai-server PROPERTIES COMPILE_FLAGS "${DEFINITIONS}" )
 if( INSTALL_COMPONENT_RUNTIME )
 	cpack_add_component( Runtime_aiserver DESCRIPTION "ai-server" DISPLAY_NAME "ai-server" GROUP Runtime )
