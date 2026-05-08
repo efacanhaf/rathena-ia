@@ -1,0 +1,299 @@
+//===== DimensionsRO ==========================================
+//= Valkyrie — Episode Skip NPC (iRO official; kRO 밝히리/Bakhiri)
+//===== Description: ==========================================
+//= NPC oficial iRO/kRO que consome um Episode Pass Ticket e
+//= marca todas as quests do episodio correspondente como
+//= concluidas, alem de setar a variavel principal para
+//= destravar conteudo gateado (NPCs, dungeons, shops, instancias).
+//=
+//= Localizacao: prt_cas 373,77 (mesma da Valkyrie iRO).
+//= Custo: 1 ticket. (A venda dos tickets sera feita em outro NPC.)
+//=
+//= Tickets aceitos:
+//=   - 1001755 D_EpisodClear14 (Episode 14 Pass Ticket)
+//=   - 1001756 D_EpisodClear15 (Episode 15 Pass Ticket)
+//=   - 1001260 D_EpisodClear16 (Episode 16 Pass Ticket)
+//=   - 1001261 D_EpisodClear17 (Episode 17 Pass Ticket)
+//=
+//= Lock ep17.1 ($@ep17_1_lock):
+//=   ON  -> ticket 17 cobre apenas 17.1 (terra_gloria_main = 26
+//=          + 81 quest IDs do arquivo quests_17_1.txt)
+//=   OFF -> ticket 17 cobre 17.1 + 17.2 (+ ep17_2_main = 36
+//=          + 115 quest IDs do arquivo quests_17_2.txt)
+//=
+//= Skip nao concede EXP, drops nem rewards das quests puladas
+//= — apenas marca como completas para destravar conteudo.
+//= Effeito por personagem (nao por conta).
+//============================================================
+
+prt_cas,373,77,5	script	Valkyrie#dro_skip	811,{
+	mes "[Valkyrie]";
+	mes "Saudacoes, viajante.";
+	mes "Possuo o poder de iluminar caminhos ja trilhados por outros herois.";
+	next;
+	mes "[Valkyrie]";
+	mes "Entregue-me um ^4d4dffPasse de Episodio^000000 e eu marcarei toda a jornada correspondente como concluida em sua memoria.";
+	next;
+	mes "[Valkyrie]";
+	mes "^aaaaaaO uso e' irreversivel e nao concede EXP nem recompensas das quests puladas.^000000";
+	next;
+
+	.@menu$ = "Episodio 14 (Lighthalzen, Bifrost, Eclage, Dewata, Malangdo, Malaya):Episodio 15 (Phantasmagorika + Reload):Episodio 16 (Banquet for Heroes + Charleston):";
+	if ($@ep17_1_lock == 1)
+		.@menu$ = .@menu$ + "Episodio 17.1 (Terra Gloria — Illusion):Sair";
+	else
+		.@menu$ = .@menu$ + "Episodio 17 (Terra Gloria + Mansion):Sair";
+
+	switch (select(.@menu$)) {
+	case 1: callsub L_ep14; break;
+	case 2: callsub L_ep15; break;
+	case 3: callsub L_ep16; break;
+	case 4: callsub L_ep17; break;
+	case 5: close;
+	}
+	close;
+
+// ---------------------------------------------------------------
+// Episodio 14 (Lighthalzen + Bifrost + Eclage + Dewata + Malangdo + Malaya)
+// 339 quest IDs agregadas dos arquivos quests_lighthalzen, quests_dewata,
+// quests_malangdo, quests_malaya, quests_eclage, quests_14_3, quests_14_3_bis.
+// ---------------------------------------------------------------
+L_ep14:
+	if (countitem(1001755) < 1) {
+		mes "[Valkyrie]";
+		mes "Voce nao possui o ^4d4dffPasse de Episodio 14^000000.";
+		return;
+	}
+	mes "[Valkyrie]";
+	mes "Vou marcar como concluidas todas as quests do Episodio 14.";
+	mes "Tem certeza?";
+	next;
+	if (select("Sim, prossiga.:Nao, deixa pra depois.") == 2) {
+		mes "[Valkyrie]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 1001755, 1;
+
+	setarray .@q[0],1145,1146,1147,1148,1149,1150,1151,1152,1153,1154,1155,1174,1175,1176,1177,1178,1179,1180,1181,1182;
+	setarray .@q[20],1183,1184,1185,1186,1187,1188,1189,1190,1191,1192,1193,1214,1217,1218,1219,1220,1221,1222,1223,1228;
+	setarray .@q[40],1264,1265,1266,1267,1268,1269,1270,1271,1272,1273,1274,1275,1297,2271,2272,2273,2274,2275,2276,2277;
+	setarray .@q[60],2278,2279,2280,2281,4254,4255,4256,4257,4258,4259,4260,4261,4262,4263,4264,4265,5035,5044,5045,5052;
+	setarray .@q[80],5053,5054,5058,5059,5060,5061,5062,5063,5064,5065,5066,5067,5068,5069,5070,5071,5072,5073,5074,5075;
+	setarray .@q[100],5076,5077,5078,5079,5080,5081,5082,5083,5084,5085,5086,5087,5088,5089,5090,7200,7201,7242,7243,7244;
+	setarray .@q[120],7245,7246,7247,7249,7250,7251,7252,7253,7254,7255,7256,7257,7258,7259,7260,7261,7262,7263,7264,7265;
+	setarray .@q[140],7266,7267,7268,7269,7270,7271,7272,7273,7274,7275,7276,7280,7350,7351,7352,7353,7354,7355,7356,7357;
+	setarray .@q[160],7358,7359,7360,7361,7362,7363,7364,7365,7366,7367,7368,7369,7370,7371,7372,7373,7374,7375,7376,7377;
+	setarray .@q[180],7378,7379,7380,7381,7382,7383,7384,7385,7386,7387,7388,7389,7390,7391,7392,7393,7394,7395,7396,7397;
+	setarray .@q[200],7398,7399,7401,7402,7403,7404,7405,7406,7407,7408,7409,7410,7411,7412,7413,7418,7419,7420,7422,7423;
+	setarray .@q[220],7424,7425,7426,7427,7428,7429,7430,7431,7432,7433,7434,7438,7439,7440,7444,7445,7446,7447,7448,7453;
+	setarray .@q[240],7578,7579,7580,7581,7582,7583,7584,7593,7594,7595,7597,7598,7599,7600,9155,9157,9158,9165,9225,9239;
+	setarray .@q[260],9241,9245,9252,9253,9254,9255,9256,9257,9258,9259,9260,9262,11209,11214,11215,11220,11221,11224,11225,11228;
+	setarray .@q[280],11229,11235,11236,11237,11238,11239,11240,11243,11244,11245,11284,11309,11310,11311,11312,11337,11349,11350,11351,11352;
+	setarray .@q[300],11353,11354,11355,11356,11357,11358,11359,11360,11361,11362,12280,12301,13050,13051,13052,13053,13054,13055,13056,13057;
+	setarray .@q[320],13058,13059,13060,13061,13062,13063,13064,13065,13066,14118,14119,14123,14125,14126,14131,14133,14137,14138,14141;
+
+	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+		// completequest e' no-op se a quest nao esta no log do player
+		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		completequest .@q[.@i];
+	}
+
+	mes "[Valkyrie]";
+	mes "Pronto. As trilhas do Episodio 14 estao iluminadas em sua memoria.";
+	mes "^aaaaaaConteudo destravado: Lighthalzen, Bifrost, Eclage, Dewata, Malangdo, Malaya.^000000";
+	return;
+
+// ---------------------------------------------------------------
+// Episodio 15 (Phantasmagorika 15.1 + Reload 15.2)
+// 128 quest IDs agregadas (64 de cada).
+// ---------------------------------------------------------------
+L_ep15:
+	if (countitem(1001756) < 1) {
+		mes "[Valkyrie]";
+		mes "Voce nao possui o ^4d4dffPasse de Episodio 15^000000.";
+		return;
+	}
+	mes "[Valkyrie]";
+	mes "Vou marcar como concluidas todas as quests do Episodio 15 (Phantasmagorika e Reload).";
+	mes "Tem certeza?";
+	next;
+	if (select("Sim, prossiga.:Nao, deixa pra depois.") == 2) {
+		mes "[Valkyrie]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 1001756, 1;
+
+	// Spine vars 15.1 + 15.2
+	ep15_1_atnad = 34;
+	ep15_1_elb = 15;
+	ep15_1_mang = 15;
+	ep15_2_brigan = 15;
+	ep15_2_bslast = 15;
+	ep15_2_bsmemo = 18;
+	ep15_2_memory = 15;
+	ep15_2_permit = 15;
+
+	// Quest IDs ep15.1
+	setarray .@q[0],4295,4296,5269,5275,5304,5305,5306,5307,5308,5309,5310,5311,5312,5313,5314,5315,5316,5317,5318,7607;
+	setarray .@q[20],7608,7609,7610,7611,7612,7613,7614,7615,7616,7617,7618,7619,7620,7621,7622,7623,7624,7625,7626,7627;
+	setarray .@q[40],7628,7629,7641,7642,7643,7644,7647,7648,7649,11363,11364,11365,11366,11367,11368,11369,11370,11371,11372,11373;
+	setarray .@q[60],11374,11375,11376,11377;
+
+	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+		// completequest e' no-op se a quest nao esta no log do player
+		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		completequest .@q[.@i];
+	}
+
+	// Quest IDs ep15.2 (reset array)
+	deletearray .@q[0], getarraysize(.@q);
+	setarray .@q[0],5341,5342,5347,5348,5349,5350,5351,5352,5353,5354,5355,5356,5357,5358,5359,5360,5361,5362,5363,5364;
+	setarray .@q[20],5365,5366,5367,5368,5369,5370,7607,7608,7641,7642,7643,7644,7645,7646,7647,7648,7649,7650,7651,7652;
+	setarray .@q[40],7653,7654,7655,11380,11381,11382,11383,11384,11385,11386,11387,11388,11389,13195,13196,13197,13198,13199,13200,13201;
+	setarray .@q[60],13202,13203,13204,13205;
+
+	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+		// completequest e' no-op se a quest nao esta no log do player
+		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		completequest .@q[.@i];
+	}
+
+	mes "[Valkyrie]";
+	mes "Pronto. As trilhas do Episodio 15 estao iluminadas em sua memoria.";
+	mes "^aaaaaaConteudo destravado: Phantasmagorika, Reload (Brasilis Smith).^000000";
+	return;
+
+// ---------------------------------------------------------------
+// Episodio 16 (Banquet for Heroes 16.1 + Charleston/Verus 16.2)
+// 296 quest IDs agregadas (169 + 127).
+// ---------------------------------------------------------------
+L_ep16:
+	if (countitem(1001260) < 1) {
+		mes "[Valkyrie]";
+		mes "Voce nao possui o ^4d4dffPasse de Episodio 16^000000.";
+		return;
+	}
+	mes "[Valkyrie]";
+	mes "Vou marcar como concluidas todas as quests do Episodio 16 (Banquete dos Herois e Charleston).";
+	mes "Tem certeza?";
+	next;
+	if (select("Sim, prossiga.:Nao, deixa pra depois.") == 2) {
+		mes "[Valkyrie]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 1001260, 1;
+
+	// Spine var 16.1
+	ep16_royal = 24;
+
+	// Quest IDs ep16.1 (Banquet for Heroes)
+	setarray .@q[0],5402,5403,5414,5415,5416,5417,5418,5419,5420,5421,5422,5423,5424,5425,5426,5427,5428,5429,5430,5431;
+	setarray .@q[20],5432,5433,5434,5435,5436,5437,5438,5439,5440,5441,5442,5443,5444,5445,5446,5447,5448,5449,5450,5451;
+	setarray .@q[40],5452,5453,5454,5455,5456,5457,5458,5459,5460,5461,5462,5463,5464,5465,5466,5467,5468,7681,7682,7683;
+	setarray .@q[60],7684,7685,7686,7687,7688,7689,7690,7691,7692,7693,7694,7695,7696,7697,7698,7699,7700,7701,7702,7703;
+	setarray .@q[80],7705,7706,11394,11395,11396,11397,11398,11399,11400,11401,11402,11403,11404,11405,11406,11407,11408,11409,11410,11411;
+	setarray .@q[100],11412,11413,11414,11415,11416,11417,11418,11419,11420,11421,11422,11423,11424,11425,11426,11427,11428,11429,11430,11431;
+	setarray .@q[120],12369,14469,14470,14471,14472,14473,14474,14475,14476,14477,14478,14479,14480,14481,14482,14483,14484,14485,14486,14487;
+	setarray .@q[140],14488,14489,14490,14491,14492,14493,14494,14495,14496,14497,14498,14499,14500,14501,14502,14503,14504,14505,14506,14507;
+	setarray .@q[160],14508,14509,14510,14511,14512,14513,14514,14515,14516;
+
+	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+		// completequest e' no-op se a quest nao esta no log do player
+		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		completequest .@q[.@i];
+	}
+
+	// Quest IDs ep16.2 (Charleston/Verus)
+	deletearray .@q[0], getarraysize(.@q);
+	setarray .@q[0],5727,5728,5729,5730,5731,5732,5733,5734,5735,5736,5737,7731,7732,7733,7734,7735,7736,7737,7738,7739;
+	setarray .@q[20],7740,7741,7742,7743,7744,7745,7746,7747,7748,7749,7750,7751,7760,7761,7762,11454,11455,11456,11457,11458;
+	setarray .@q[40],11459,11460,11461,11462,11463,11464,11465,11466,11467,11468,11469,11470,12376,14595,14596,14597,14598,14599,14600,14601;
+	setarray .@q[60],14602,14603,14604,14605,14606,14607,14608,14609,14610,14611,14612,14613,14614,14615,16009,16010,16011,16012,16013,16014;
+	setarray .@q[80],16015,16016,16017,16018,16019,16020,16021,16022,16023,16024,16025,16026,16027,16028,16029,16030,16031,16032,16033,16034;
+	setarray .@q[100],16035,16036,16037,16038,16039,16040,16041,16042,16043,16044,16045,16046,16047,16048,16049,16050,16051,16052,16053,16054;
+	setarray .@q[120],16055,16056,16057,16058,16059,16060,16061;
+
+	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+		// completequest e' no-op se a quest nao esta no log do player
+		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		completequest .@q[.@i];
+	}
+
+	mes "[Valkyrie]";
+	mes "Pronto. As trilhas do Episodio 16 estao iluminadas em sua memoria.";
+	mes "^aaaaaaConteudo destravado: Banquete dos Herois, Charleston, Verus.^000000";
+	return;
+
+// ---------------------------------------------------------------
+// Episodio 17 (Terra Gloria/Illusion 17.1 + Mansion 17.2)
+// Lock-aware: lock ON cobre so 17.1; lock OFF cobre 17.1 + 17.2.
+// ---------------------------------------------------------------
+L_ep17:
+	if (countitem(1001261) < 1) {
+		mes "[Valkyrie]";
+		mes "Voce nao possui o ^4d4dffPasse de Episodio 17^000000.";
+		return;
+	}
+	mes "[Valkyrie]";
+	if ($@ep17_1_lock == 1) {
+		mes "Vou marcar como concluidas todas as quests do Episodio 17.1 (Terra Gloria — Illusion).";
+		mes "^aaaaaaO Episodio 17.2 ainda nao esta disponivel em DimensionsRO; quando for liberado, este mesmo passe cobrira ambos.^000000";
+	} else {
+		mes "Vou marcar como concluidas todas as quests do Episodio 17 (Terra Gloria + Mansion da Tragedia).";
+	}
+	mes "Tem certeza?";
+	next;
+	if (select("Sim, prossiga.:Nao, deixa pra depois.") == 2) {
+		mes "[Valkyrie]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 1001261, 1;
+
+	// Spine var 17.1 (sempre)
+	terra_gloria_main = 26;
+
+	// Quest IDs ep17.1
+	setarray .@q[0],5856,5861,7850,7851,7852,7853,7854,7855,7856,7857,7858,7859,7860,7861,7862,7863,7864,7865,7867,7868;
+	setarray .@q[20],11596,11599,11600,11601,11602,11603,12452,12454,12455,16352,16353,16354,16355,16356,16357,16358,16359,16360,16361,16362;
+	setarray .@q[40],16363,16364,16365,16366,16367,16370,16373,16376,17000,17001,17002,17003,17004,17005,17006,17007,17008,17009,17010,17011;
+	setarray .@q[60],17012,17013,17014,17015,17016,17017,17018,17019,17020,17021,17022,17023,17024,17025,17026,17032,17033,17034,17035,18000;
+	setarray .@q[80],18001;
+
+	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+		// completequest e' no-op se a quest nao esta no log do player
+		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		completequest .@q[.@i];
+	}
+
+	if ($@ep17_1_lock != 1) {
+		// Spine var 17.2
+		ep17_2_main = 36;
+
+		// Quest IDs ep17.2
+		deletearray .@q[0], getarraysize(.@q);
+		setarray .@q[0],3389,3390,3391,3392,5892,5893,5894,5895,5896,5897,5898,5899,5900,8595,8681,11615,11616,11617,11618,11620;
+		setarray .@q[20],11621,11622,11623,11624,11625,11626,11627,11628,11629,11630,11631,11632,11633,11638,11639,16427,16428,16429,16430,16431;
+		setarray .@q[40],16432,16433,16434,16435,16436,16440,16441,16442,16443,16444,16445,16446,16447,16448,16449,16450,16451,16452,16453,17333;
+		setarray .@q[60],17334,17335,17336,17337,17338,17340,17341,17342,17343,17344,17345,17346,17347,17348,17349,17350,17351,17352,17353,17355;
+		setarray .@q[80],17358,17363,17364,17365,17366,17367,17368,17369,17370,17371,17372,17373,17374,17375,17376,17377,17378,17379,17380,17381;
+		setarray .@q[100],18001,18002,18013,18014,18015,18016,18017,18018,18019,18020,18021,18022,18023,18024,18025;
+
+		for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
+			if (isbegin_quest(.@q[.@i]) > 0) completequest .@q[.@i];
+		}
+	}
+
+	mes "[Valkyrie]";
+	if ($@ep17_1_lock == 1) {
+		mes "Pronto. As trilhas do Episodio 17.1 estao iluminadas em sua memoria.";
+		mes "^aaaaaaConteudo destravado: Terra Gloria, Illusion of Vampire/Frozen/etc.^000000";
+	} else {
+		mes "Pronto. As trilhas do Episodio 17 estao iluminadas em sua memoria.";
+		mes "^aaaaaaConteudo destravado: Terra Gloria, Illusion, Mansion da Tragedia.^000000";
+	}
+	return;
+}
