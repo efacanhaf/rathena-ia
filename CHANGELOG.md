@@ -6,6 +6,38 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-05-08
+
+### Adicionado — Sistema de Aventureiros
+
+- **Novo NPC: Treinador de Aventureiros** (prt_in 44,113). O líder da party
+  pode contratar um Aventureiro de suporte para acompanhar o grupo.
+- O Aventureiro é um companheiro controlado pelo servidor que **segue o
+  contratante, cura, buffa, ressuscita e remove status negativos** da party
+  inteira. **Não ataca por conta própria** — foco 100% em suporte.
+- A **classe** do Aventureiro é definida automaticamente pelo nível do líder:
+  - até 39 → Acólito
+  - 40 a 69 → Sacerdote
+  - 70 a 98 → Sumo Sacerdote
+  - 99+ → Arcebispo
+- O nível do Aventureiro **acompanha o nível do líder** (até 175).
+- O Aventureiro **entra na party automaticamente** ao spawnar e segue você
+  através de teleportes, portais e mudanças de mapa.
+- Se o Aventureiro morrer, ele **espera ser ressuscitado**. Se o líder
+  voltar ao ponto de retorno, o Aventureiro respawna ao seu lado.
+- Se você deslogar, ele desaparece e **reaparece automaticamente no próximo
+  login do mesmo personagem** — o tempo offline não conta no contrato.
+- **Custo (zeny):** nível × 100z por minuto. Opções de 5, 30 ou 60 minutos.
+- **Comandos:** `@dismiss` para dispensar antes do tempo acabar.
+
+### Adicionado — Voucher de Aventureiro
+
+- Novo item: **Voucher de Aventureiro** (id 1270150). Quando você tem um
+  na bolsa, a opção de **60 minutos no Treinador de Aventureiros** vira
+  pagamento por 1 Voucher (sem custo de zeny).
+- O voucher é **untradeable** (não dropa, não troca, não vende), mas pode
+  ser guardado no storage e cart.
+
 ## 2026-05-07
 
 ### Mudado — Drop de Gold
