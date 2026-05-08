@@ -39,8 +39,16 @@ struct PACKET_AI_SHELL_SPAWN_S {
 	uint8  behavior_id;  // ai-server-side enum (Phase 2)
 	uint8  tier;         // 0=town, 1=field, 2=dungeon (Phase 3.12 stat ramp)
 	uint8  pad;
-	// Phase 4 profile fields. ai-server fills from population_profile.yml.
-	// Map-server feeds these into status_calc_pc — no HP/Atk/Def hardcoding.
+	// Phase 6 — mercenary mode. 0 = autonomous shell (population spawner);
+	// non-zero = the BL_PC account_id this shell is hired by. Map-server
+	// resolves the owner via map_id2sd at REPORT time and ai-server uses
+	// it to drive follow / support behavior. When the owner logs out, map
+	// emits AI_EVT_OWNER_GONE and ai-server despawns the shell.
+	// owner_cid = char_id; the merc is bound to a specific character, not
+	// the whole account, so logging in with a different char on the same
+	// account does NOT bring the merc back.
+	uint32 owner_aid;
+	uint32 owner_cid;
 	uint16 base_level;
 	uint16 job_level;
 	uint16 str_, agi_, vit_, int_, dex_, luk_;
@@ -156,6 +164,19 @@ constexpr uint32 AI_ST_ENDURE    = 1u << 12;
 constexpr uint32 AI_ST_PROVOKE   = 1u << 13;
 constexpr uint32 AI_ST_AUTOGUARD = 1u << 14;
 constexpr uint32 AI_ST_INC_AGI   = 1u << 15;
+// Phase 6 — Priest/AB support buffs. Mercenary skill picker uses
+// NOT_OWNER_STATUS to decide when to refresh.
+constexpr uint32 AI_ST_BLESSING  = 1u << 16;
+constexpr uint32 AI_ST_KYRIE     = 1u << 17;
+constexpr uint32 AI_ST_MAGNIFICAT= 1u << 18;
+constexpr uint32 AI_ST_ASSUMPTIO = 1u << 19;
+constexpr uint32 AI_ST_ANGELUS   = 1u << 20;
+constexpr uint32 AI_ST_IMPOSITIO = 1u << 21;
+constexpr uint32 AI_ST_GLORIA    = 1u << 22;
+constexpr uint32 AI_ST_EXPIATIO  = 1u << 23;
+constexpr uint32 AI_ST_SECRAMENT = 1u << 24;
+constexpr uint32 AI_ST_OFFERTORIUM = 1u << 25;
+constexpr uint32 AI_ST_RENOVATIO   = 1u << 26;
 
 /// One row in PACKET_AI_SHELL_REPORT.enemies[]. mob_class kept for
 /// behavior-side mob_db lookups; distance pre-computed on map side.
@@ -176,6 +197,18 @@ struct PACKET_AI_NEARBY_ENEMY {
 
 constexpr uint8 AI_REPORT_MAX_ENEMIES = 8;
 
+/// Phase 6 — party member snapshot for mercenary support targeting.
+/// Sent as a fixed-size array in PACKET_AI_SHELL_REPORT so the ai-server
+/// can iterate party members and pick whichever one needs the next buff/
+/// heal (target=PARTY in the rotation YAML).
+struct PACKET_AI_PARTY_MEMBER {
+	uint32 account_id;	// 0 = empty slot
+	uint16 hp_pct;		// 0..100
+	uint16 sp_pct;
+	uint32 statuses;	// AI_ST_* bitmask
+};
+constexpr uint8 AI_REPORT_MAX_PARTY = 12;
+
 /// PACKET_AI_SHELL_EVENT (0x2b52) — async map → ai notification.
 /// kind tells the payload shape: ATTACKED_BY supplies attacker_id+dmg,
 /// DIED supplies killer_id, WHISPERED_BY/MENTIONED reserved for Phase 3.
@@ -184,6 +217,8 @@ constexpr uint8 AI_EVT_DIED            = 2;
 constexpr uint8 AI_EVT_RESURRECTED     = 3;
 constexpr uint8 AI_EVT_WHISPERED_BY    = 4;
 constexpr uint8 AI_EVT_MENTIONED       = 5;
+constexpr uint8 AI_EVT_OWNER_GONE      = 6;	// Phase 6 — owner logged out / disconnected
+constexpr uint8 AI_EVT_OWNER_BACK      = 7;	// Phase 6 — owner reconnected (carried by PACKET_AI_OWNER_BACK)
 
 struct PACKET_AI_SHELL_EVENT_S {
 	uint16 cmd;
@@ -209,7 +244,74 @@ struct PACKET_AI_SHELL_REPORT_S {
 	uint32 self_statuses; // Phase 5 — bitmask of AI_ST_* on the shell itself
 	uint8  enemy_count; // 0..AI_REPORT_MAX_ENEMIES
 	uint8  pad[3];
+	// Phase 6 — owner snapshot for mercenary follow/support behavior.
+	// owner_present=0 when the shell has no owner (autonomous) OR when the
+	// owner is offline/zoning; in both cases the rest of the owner_* block
+	// is meaningless and should be ignored.
+	uint8  owner_present;
+	uint8  owner_pad[3];
+	uint16 owner_mapindex;
+	uint16 owner_x, owner_y;
+	uint16 owner_hp_pct;
+	uint16 owner_sp_pct;
+	uint32 owner_statuses;
+	uint32 owner_target_id;	// Phase 6 — owner's current attack target (BL id), 0 if none
 	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
+	// Phase 6 — full party roster (mercenary support targeting). Slots
+	// with account_id=0 are empty; party_count is the number of valid
+	// entries (<= AI_REPORT_MAX_PARTY). Excludes the merc itself.
+	uint8 party_count;
+	uint8 party_pad[3];
+	PACKET_AI_PARTY_MEMBER party_members[AI_REPORT_MAX_PARTY];
+};
+
+/// PACKET_AI_DISMISS_REQUEST (0x2b45) — map -> char -> ai.
+/// Player runs @dismiss / NPC -> ai-server tears down their merc shell
+/// without waiting for the contract timer. No ack. Routed by char_id —
+/// each character owns its own merc independently.
+struct PACKET_AI_DISMISS_REQUEST_S {
+	uint16 cmd;
+	uint16 len;
+	uint32 owner_cid;
+};
+
+/// PACKET_AI_OWNER_BACK (0x2b54) — map -> char -> ai.
+/// Phase 6 — fired by map-server's suspended-owner poll when the merc's
+/// owning character reconnects. ai-server reuses init_snap to re-spawn
+/// the merc next to the player and resumes the paused hire contract.
+/// Both owner_aid (current runtime aid) and owner_cid (persistent identity)
+/// are sent; ai-server verifies cid matches before re-spawning.
+struct PACKET_AI_OWNER_BACK_S {
+	uint16 cmd;
+	uint16 len;
+	uint32 shell_id;
+	uint32 owner_aid;
+	uint32 owner_cid;
+	char   map_name[MAP_NAME_LENGTH_EXT];
+	uint16 x, y;
+};
+
+/// PACKET_AI_HIRE_REQUEST (0x2b44) — map -> char -> ai.
+/// Player runs @hire / NPC script -> map-server fills owner_aid + spawn
+/// point and sends this. ai-server allocates a shell, picks the right
+/// profile tier, and emits a normal SHELL_SPAWN. No ack packet (the
+/// player feels the success when the merc spawns next to them).
+struct PACKET_AI_HIRE_REQUEST_S {
+	uint16 cmd;
+	uint16 len;
+	uint32 owner_aid;
+	uint32 owner_cid;	// Phase 6 — char_id; merc is bound to character, not account
+	uint16 job;       // 4=Acolyte, 8=Priest, 4014=High Priest, 4063=Arch Bishop
+	uint8  tier;      // 0..2 — picked by map-side based on player's level
+	uint8  pad;
+	char   map_name[MAP_NAME_LENGTH_EXT];
+	uint16 x, y;
+	uint32 duration_ms;
+	// Phase 6 — when non-zero, override the profile's BaseLevel/JobLevel.
+	// Lets the hire NPC scale the merc to the party leader's level so an
+	// lvl-175 player gets an lvl-175 AB instead of the fixed T2 lvl 130.
+	uint16 base_level_override;
+	uint16 job_level_override;
 };
 
 /// AI_CMD_WARP — pc_setpos shell back to a known map+cell. Used for drift

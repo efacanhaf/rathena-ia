@@ -12,6 +12,7 @@
 #include <common/ai_packets.hpp>
 #include <common/random.hpp>
 #include <common/cbasetypes.hpp>
+#include <common/mapindex.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
 #include <common/strlib.hpp>
@@ -48,6 +49,9 @@ struct shell_init_snapshot {
 	uint16 str_, agi_, vit_, int_, dex_, luk_;
 	uint16 speed;
 	uint32 equip[10];
+	uint32 owner_aid;	// Phase 6 — preserved through respawn (mercs respawn
+						// to owner's side, not population home)
+	uint32 owner_cid;	// Phase 6 — char_id; merc is bound to char, not account
 };
 
 struct shell_state {
@@ -85,9 +89,55 @@ struct shell_state {
 	// no separate field is needed for those.
 	uint32 self_statuses;
 	uint32 last_attacker;   // most recent ATTACKED_BY actor_id
+	// Phase 6 — mercenary mode. owner_aid != 0 = hired by player; switches
+	// behavior from autonomous wander/combat to follow/support. owner_cid
+	// is the char_id (persistent identity used for anti-stack and relogin
+	// matching); owner_aid is the runtime account_id used for map_id2sd.
+	uint32 owner_aid;
+	uint32 owner_cid;
+	uint8  owner_present;   // 1 if last REPORT had owner online
+	uint16 owner_mapindex;
+	uint16 owner_x, owner_y;
+	uint16 owner_hp_pct, owner_sp_pct;
+	uint32 owner_statuses;
+	uint32 owner_target_id;	// Phase 6 — owner's current attack target
+	t_tick hire_expires_at;	// 0 = no expiry; gettick() >= this → despawn
+	t_tick last_follow_tick;	// throttle WALK_TO commands while following
+	// Phase 6 — per-skill cooldown so we don't spam the same buff before
+	// the SC bit shows up in the next REPORT. Keyed by skill_name.
+	std::unordered_map<std::string, t_tick> skill_cooldown_until;
+	// Phase 6 — party roster snapshot from REPORT. Used by support tick
+	// when a skill has Target=PARTY: walk the members and cast on the
+	// first one whose state still matches the skill's condition.
+	uint8 party_count;
+	PACKET_AI_PARTY_MEMBER party_members[AI_REPORT_MAX_PARTY];
+	// Phase 6 — derived flags for "decision quality" filtering. The
+	// support tick refreshes them every report and uses them to skip
+	// non-emergency skills when the owner is taking damage or moving.
+	uint16 prev_owner_x, prev_owner_y;
+	uint16 prev_owner_hp_pct;
+	t_tick last_owner_move_tick;
+	t_tick last_owner_damage_tick;
+	// Phase 6 — when the merc dies we pause the hire contract; on
+	// resurrection we shift hire_expires_at by the time spent dead so
+	// the player isn't billed for downtime.
+	t_tick died_at_tick;
+	// Phase 6 — owner logged out. Map-server has already despawned the
+	// shell; we keep the shell_state alive so we can re-spawn at the
+	// owner's location once they reconnect (PACKET_AI_OWNER_BACK).
+	// While suspended, follow/support timers skip this shell and the
+	// hire contract is paused (suspended_at_tick shifts hire_expires_at
+	// on resume).
+	bool   suspended;
+	t_tick suspended_at_tick;
 };
 std::vector<shell_state> g_shells_local;
 std::unordered_map<uint32, size_t> g_shell_idx; // shell_id -> g_shells_local index
+// Phase 6 — owner_cid -> shell_id; one merc per character. Used for
+// anti-stack at hire time and for routing DISMISS_REQUEST to the right
+// shell. Keyed by char_id, not account_id, so the merc is bound to the
+// specific character that hired it.
+std::unordered_map<uint32, uint32> g_merc_by_owner;
 // Free-roam wander: town shells take small steps every tick; field/dungeon
 // patrols use a larger step (PATROL_STEP) with persistent direction.
 constexpr uint16 WANDER_STEP = 5;
@@ -104,7 +154,10 @@ int32  g_spawn_emitted = 0;
 // Reset on reconnect so we re-probe after a map restart.
 bool   g_map_ready = false;
 constexpr int32 SPAWN_BATCH_PER_TICK = 20;
-constexpr int32 SPAWN_HARD_CAP = 1;
+// Phase 6 — autonomous spawner is paused while we focus on the mercenary
+// system (Acolyte/Priest line). Set to >0 later to bring back ambient
+// shells. Hired mercs (aichrif_hire) bypass this cap entirely.
+constexpr int32 SPAWN_HARD_CAP = 0;
 }
 
 /// 0 = not connected
@@ -226,6 +279,109 @@ int32 aichrif_send_cast(int32 fd, uint32 shell_id, const char* skill_name,
 	return 0;
 }
 
+uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
+		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
+		uint16 base_level_override, uint16 job_level_override){
+	using namespace rathena::server_ai;
+	if (aichrif_state != 2 || char_fd < 0) {
+		ShowWarning("aichrif_hire: not connected to char-server (state=%d).\n", aichrif_state);
+		return 0;
+	}
+	// Phase 6 — anti-stack. One merc per character at a time. Keyed by
+	// char_id so a different char on the same account can hire its own.
+	if (g_merc_by_owner.find(owner_cid) != g_merc_by_owner.end()) {
+		ShowWarning("aichrif_hire: char %u already has a merc (shell %u).\n",
+			owner_cid, g_merc_by_owner[owner_cid]);
+		return 0;
+	}
+	if (!profile_has_exact(job, tier)) {
+		ShowWarning("aichrif_hire: no profile for job=%u tier=%u.\n", job, tier);
+		return 0;
+	}
+	uint32 sid = shell_pool_alloc();
+	if (sid == 0) {
+		ShowWarning("aichrif_hire: shell pool empty.\n");
+		return 0;
+	}
+	ai_profile pr = profile_get(job, tier);
+	if (pr.base_level == 0 || pr.equip[AI_EQ_HAND_R] == 0) {
+		ShowWarning("aichrif_hire: profile incomplete for job=%u tier=%u.\n", job, tier);
+		shell_pool_free(sid);
+		return 0;
+	}
+	char nm[NAME_LENGTH];
+	names_generate(nm);
+	ai_shell_init init{};
+	init.shell_id   = sid;
+	init.name       = nm;
+	init.class_     = job;
+	init.sex        = (uint8)(rnd() % 2);
+	init.hair       = (uint16)(1 + rnd() % 20);
+	init.hair_color = (uint16)(rnd() % 8);
+	init.head_top   = (uint16)pr.equip[AI_EQ_HEAD_TOP];
+	init.weapon     = (uint16)pr.equip[AI_EQ_HAND_R];
+	init.map_name   = map_name;
+	init.x          = x;
+	init.y          = y;
+	init.dir        = 0;
+	init.behavior_id= 0;
+	init.tier       = tier;
+	init.base_level = (base_level_override > 0) ? base_level_override : pr.base_level;
+	init.job_level  = (job_level_override  > 0) ? job_level_override  : pr.job_level;
+	init.str_ = pr.str; init.agi_ = pr.agi; init.vit_ = pr.vit;
+	init.int_ = pr.int_; init.dex_ = pr.dex; init.luk_ = pr.luk;
+	init.speed = pr.speed;
+	for (int es = 0; es < AI_EQ_COUNT; es++) init.equip[es] = pr.equip[es];
+	init.owner_aid  = owner_aid;
+	init.owner_cid  = owner_cid;
+	aichrif_send_shell_spawn(char_fd, init);
+	g_stats.spawned++;
+
+	shell_state st{};
+	st.shell_id = sid;
+	st.job = job;
+	st.cat = spawn_category::FIELD; // mercs travel with owner; "field" so the
+	                                // combat tick treats them as engaging
+	st.home_map = map_name;
+	st.home_x = x; st.home_y = y;
+	st.base_x = x; st.base_y = y;
+	st.warp_at_tick = 0;
+	st.hp = 1; st.max_hp = 1;
+	st.owner_aid = owner_aid;
+	st.owner_cid = owner_cid;
+	st.hire_expires_at = duration_ms ? (gettick() + (t_tick)duration_ms) : 0;
+	// Snapshot for in-place respawn — though mercs don't respawn (they
+	// despawn on death/owner-gone), we keep the snapshot symmetrical.
+	st.init_snap.name      = nm;
+	st.init_snap.map_name  = map_name;
+	st.init_snap.class_    = init.class_;
+	st.init_snap.sex       = init.sex;
+	st.init_snap.hair      = init.hair;
+	st.init_snap.hair_color= init.hair_color;
+	st.init_snap.head_top  = init.head_top;
+	st.init_snap.weapon    = init.weapon;
+	st.init_snap.x = x; st.init_snap.y = y;
+	st.init_snap.dir = 0;
+	st.init_snap.behavior_id = 0;
+	st.init_snap.tier = tier;
+	st.init_snap.base_level = pr.base_level;
+	st.init_snap.job_level  = pr.job_level;
+	st.init_snap.str_ = pr.str; st.init_snap.agi_ = pr.agi;
+	st.init_snap.vit_ = pr.vit; st.init_snap.int_ = pr.int_;
+	st.init_snap.dex_ = pr.dex; st.init_snap.luk_ = pr.luk;
+	st.init_snap.speed = pr.speed;
+	for (int es = 0; es < 10; es++) st.init_snap.equip[es] = init.equip[es];
+	st.init_snap.owner_aid = owner_aid;
+	st.init_snap.owner_cid = owner_cid;
+	g_shell_idx[sid] = g_shells_local.size();
+	g_shells_local.push_back(st);
+	g_merc_by_owner[owner_cid] = sid;
+
+	ShowStatus("ai-server: hired job=%u tier=%u as shell %u for char %u (aid %u) at %s(%u,%u) dur=%ums.\n",
+		job, tier, sid, owner_cid, owner_aid, map_name, x, y, duration_ms);
+	return sid;
+}
+
 int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init){
 	PACKET_AI_SHELL_SPAWN_S p{};
 	p.cmd = PACKET_AI_SHELL_SPAWN;
@@ -251,6 +407,8 @@ int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init){
 	p.int_ = init.int_; p.dex_ = init.dex_; p.luk_ = init.luk_;
 	p.speed    = init.speed;
 	for (int i = 0; i < 10; i++) p.equip[i] = init.equip[i];
+	p.owner_aid = init.owner_aid;	// Phase 6 — 0 = autonomous, !=0 = hired
+	p.owner_cid = init.owner_cid;	// Phase 6 — char_id for relogin matching
 	WFIFOHEAD(fd, sizeof(p));
 	memcpy(WFIFOP(fd, 0), &p, sizeof(p));
 	WFIFOSET(fd, sizeof(p));
@@ -392,9 +550,21 @@ static int32 aichrif_parse_event(int32 fd){
 				g_stats.died_events++;
 				s.target_id = 0;
 				s.fleeing_until = 0;
-				// Phase 5 — schedule respawn at home if enabled. The actual
-				// despawn+spawn pair is emitted by tick_respawns() once the
-				// delay elapses; this just sets the alarm.
+				// Phase 6 — mercs wait dead so a Priest/AB can revive
+				// them with Resurrection. The follow_timer watches the
+				// owner: if the owner respawns at save point (different
+				// map than where the merc died), trigger a fresh spawn
+				// next to the owner. Until then we leave the corpse on
+				// the map and let players Resurrect.
+				if (s.owner_aid != 0) {
+					ShowStatus("ai-server: merc shell %u died — waiting for owner.\n", s.shell_id);
+					s.respawn_at_tick = 0;	// no auto-respawn; gated on owner state
+					s.died_at_tick = gettick();	// pause hire contract clock
+					break;
+				}
+				// Phase 5 — autonomous shells: schedule respawn at home if
+				// enabled. The actual despawn+spawn pair is emitted by the
+				// respawn tick once the delay elapses.
 				if (ai_config.respawn_delay_ms > 0) {
 					s.respawn_at_tick = gettick() + (t_tick)ai_config.respawn_delay_ms;
 					g_stats.respawns_scheduled++;
@@ -402,6 +572,27 @@ static int32 aichrif_parse_event(int32 fd){
 				break;
 			case AI_EVT_RESURRECTED:
 				s.fleeing_until = 0;
+				s.died_at_tick = 0;
+				break;
+			case AI_EVT_OWNER_GONE:
+				// Phase 6 — owner logged out / disconnected. Despawn the
+				// shell on map-server but KEEP the shell_state on
+				// ai-server in suspended mode. When map-server detects
+				// the owner reconnect it sends PACKET_AI_OWNER_BACK and
+				// we re-spawn next to them. Hire contract is paused while
+				// suspended so the player isn't billed for downtime.
+				if (s.owner_aid != 0 && !s.suspended) {
+					ShowStatus("ai-server: merc shell %u owner %u gone — suspending.\n",
+						s.shell_id, s.owner_aid);
+					aichrif_send_despawn(char_fd, s.shell_id, /*reason=*/2);
+					s.suspended = true;
+					s.suspended_at_tick = gettick();
+					s.respawn_at_tick = 0;
+					s.target_id = 0;
+					s.fleeing_until = 0;
+					// Don't clear owner_aid / g_merc_by_owner — re-hire
+					// while suspended would orphan this shell.
+				}
 				break;
 			default:
 				break;
@@ -428,7 +619,33 @@ static int32 aichrif_parse_report(int32 fd){
 		s.enemy_count = (p->enemy_count > AI_REPORT_MAX_ENEMIES) ? AI_REPORT_MAX_ENEMIES : p->enemy_count;
 		for (uint8 i = 0; i < s.enemy_count; i++)
 			s.enemies[i] = p->enemies[i];	// row-level statuses ride along
-		s.last_report_tick = gettick();
+		// Phase 6 — owner snapshot. owner_present clears every REPORT (so
+		// after the owner zones out and back in, we re-acquire cleanly).
+		s.owner_present  = p->owner_present;
+		s.owner_mapindex = p->owner_mapindex;
+		s.owner_x = p->owner_x;
+		s.owner_y = p->owner_y;
+		s.owner_hp_pct = p->owner_hp_pct;
+		s.owner_sp_pct = p->owner_sp_pct;
+		s.owner_statuses = p->owner_statuses;
+		s.owner_target_id = p->owner_target_id;
+		s.party_count = (p->party_count > AI_REPORT_MAX_PARTY) ? AI_REPORT_MAX_PARTY : p->party_count;
+		for (uint8 i = 0; i < s.party_count; i++)
+			s.party_members[i] = p->party_members[i];
+
+		// Phase 6 — track owner movement / damage events to feed the
+		// support tick's emergency-mode filter.
+		t_tick now_r = gettick();
+		if (p->owner_present) {
+			if (p->owner_x != s.prev_owner_x || p->owner_y != s.prev_owner_y)
+				s.last_owner_move_tick = now_r;
+			if (s.prev_owner_hp_pct > 0 && p->owner_hp_pct < s.prev_owner_hp_pct)
+				s.last_owner_damage_tick = now_r;
+			s.prev_owner_x = p->owner_x;
+			s.prev_owner_y = p->owner_y;
+			s.prev_owner_hp_pct = p->owner_hp_pct;
+		}
+		s.last_report_tick = now_r;
 	}
 	RFIFOSKIP(fd, p->len);
 	return 1;
@@ -480,6 +697,78 @@ int32 aichrif_parse(int32 fd){
 				if (!aichrif_parse_event(fd))
 					return 0;
 				break;
+			case PACKET_AI_HIRE_REQUEST: {
+				if (RFIFOREST(fd) < sizeof(PACKET_AI_HIRE_REQUEST_S)) return 0;
+				const PACKET_AI_HIRE_REQUEST_S* h = (const PACKET_AI_HIRE_REQUEST_S*)RFIFOP(fd, 0);
+				char mname[MAP_NAME_LENGTH_EXT];
+				safestrncpy(mname, h->map_name, MAP_NAME_LENGTH_EXT);
+				aichrif_hire(h->job, h->tier, h->owner_aid, h->owner_cid, mname,
+					h->x, h->y, h->duration_ms,
+					h->base_level_override, h->job_level_override);
+				RFIFOSKIP(fd, h->len);
+				break;
+			}
+			case PACKET_AI_DISMISS_REQUEST: {
+				if (RFIFOREST(fd) < sizeof(PACKET_AI_DISMISS_REQUEST_S)) return 0;
+				const PACKET_AI_DISMISS_REQUEST_S* d = (const PACKET_AI_DISMISS_REQUEST_S*)RFIFOP(fd, 0);
+				auto it = g_merc_by_owner.find(d->owner_cid);
+				if (it != g_merc_by_owner.end()) {
+					uint32 sid = it->second;
+					ShowStatus("ai-server: dismiss requested for char %u (shell %u).\n",
+						d->owner_cid, sid);
+					aichrif_send_despawn(char_fd, sid, /*reason=*/5);
+					auto sit = g_shell_idx.find(sid);
+					if (sit != g_shell_idx.end() && sit->second < g_shells_local.size()) {
+						shell_state& s = g_shells_local[sit->second];
+						s.owner_aid = 0;
+						s.owner_cid = 0;
+						s.respawn_at_tick = 0;
+						s.suspended = false;
+					}
+					g_merc_by_owner.erase(it);
+				}
+				RFIFOSKIP(fd, d->len);
+				break;
+			}
+			case PACKET_AI_OWNER_BACK: {
+				if (RFIFOREST(fd) < sizeof(PACKET_AI_OWNER_BACK_S)) return 0;
+				const PACKET_AI_OWNER_BACK_S* b = (const PACKET_AI_OWNER_BACK_S*)RFIFOP(fd, 0);
+				auto sit = g_shell_idx.find(b->shell_id);
+				if (sit != g_shell_idx.end() && sit->second < g_shells_local.size()) {
+					shell_state& s = g_shells_local[sit->second];
+					// Verify char_id (persistent identity). The aid may have
+					// changed across login if the player logged the same
+					// account from elsewhere; cid is the source of truth.
+					if (s.suspended && s.owner_cid == b->owner_cid) {
+						s.owner_aid = b->owner_aid;	// refresh runtime aid
+						s.init_snap.owner_aid = b->owner_aid;	// re-spawn carries new aid
+						t_tick now_b = gettick();
+						// Resume the hire contract: shift expiry by the
+						// time spent suspended so the player isn't billed
+						// for the offline window.
+						if (s.suspended_at_tick != 0 && s.hire_expires_at != 0) {
+							t_tick paused = DIFF_TICK(now_b, s.suspended_at_tick);
+							if (paused > 0) s.hire_expires_at += paused;
+						}
+						s.suspended = false;
+						s.suspended_at_tick = 0;
+						// Update init_snap so the respawn lands next to
+						// the player wherever they logged back in.
+						char nm[MAP_NAME_LENGTH_EXT];
+						safestrncpy(nm, b->map_name, MAP_NAME_LENGTH_EXT);
+						s.init_snap.map_name = nm;
+						s.init_snap.x = b->x;
+						s.init_snap.y = b->y;
+						// Schedule an immediate respawn — the existing
+						// respawn timer will emit DESPAWN+SPAWN next tick.
+						s.respawn_at_tick = now_b;
+						ShowStatus("ai-server: merc shell %u char %u (aid %u) back — respawning at %s(%u,%u).\n",
+							s.shell_id, s.owner_cid, s.owner_aid, nm, b->x, b->y);
+					}
+				}
+				RFIFOSKIP(fd, b->len);
+				break;
+			}
 			default:
 				ShowWarning("ai-server: unknown packet 0x%04x from char-server, disconnecting.\n", cmd);
 				set_eof(fd);
@@ -674,6 +963,94 @@ static TIMER_FUNC(aichrif_spawn_drain_timer){
 	return 0;
 }
 
+/// Phase 6 — mercenary follow loop. Shells with owner_aid set track their
+/// owner instead of wandering: same-map → WALK_TO when distance > 3 cells,
+/// different-map → WARP. WALK_TO is throttled (700ms) so we don't drown the
+/// movement queue when the owner is jogging.
+static TIMER_FUNC(aichrif_follow_timer){
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	for (auto& s : g_shells_local) {
+		if (s.owner_aid == 0) continue;
+		// Suspended (owner offline) — skip follow + contract expiry. The
+		// PACKET_AI_OWNER_BACK handler resumes both.
+		if (s.suspended) continue;
+		if (s.last_report_tick == 0) continue;
+		// Hire expiry — wall-clock; ticks even while dead.
+		if (s.hire_expires_at != 0 && DIFF_TICK(now, s.hire_expires_at) >= 0) {
+			ShowStatus("ai-server: merc shell %u contract expired — despawning.\n", s.shell_id);
+			aichrif_send_despawn(char_fd, s.shell_id, /*reason=*/3);
+			if (s.owner_cid != 0) g_merc_by_owner.erase(s.owner_cid);
+			s.respawn_at_tick = 0;
+			s.owner_aid = 0;
+			s.owner_cid = 0;
+			continue;
+		}
+		// Phase 6 — dead merc waits for owner. If the owner respawns at
+		// save point (different map from where the merc died) we revive
+		// the merc next to them via the despawn+spawn cycle. Otherwise
+		// the corpse stays on the map for a player to Resurrect.
+		if (s.hp == 0) {
+			if (s.respawn_at_tick != 0) continue;	// already scheduled
+			if (!s.owner_present) continue;
+			if (s.cur_mapindex == 0 || s.owner_mapindex == 0) continue;
+			// Trigger if owner moved to a different map OR owner just
+			// respawned in place (HP went 0 → positive on same map).
+			bool same_map_respawn = (s.cur_mapindex == s.owner_mapindex
+				&& s.last_owner_damage_tick != 0	// HP delta tracked
+				&& s.owner_hp_pct >= 90);			// full or near-full → just respawned
+			if (s.cur_mapindex == s.owner_mapindex && !same_map_respawn) continue;
+			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
+			if (mname == nullptr || mname[0] == 0) continue;
+			// Override the snapshot's spawn point to the owner's current
+			// location. respawn_timer reads init_snap.map_name/x/y for
+			// the fresh spawn.
+			s.init_snap.map_name = mname;
+			s.init_snap.x = s.owner_x;
+			s.init_snap.y = s.owner_y;
+			s.respawn_at_tick = now;
+			s.died_at_tick = 0;
+			ShowStatus("ai-server: merc %u — owner moved to %s; reviving next to owner.\n",
+				s.shell_id, mname);
+			continue;
+		}
+		if (!s.owner_present) continue;	// owner offline / zoning
+		// Different mapindex → warp shell to owner. WARP packet wants a
+		// map name; resolve via mapindex_id2name. We approximate the cell
+		// to a fixed "near owner" point; map-server's pc_setpos handles
+		// the walkable-cell nudge.
+		if (s.cur_mapindex != 0 && s.cur_mapindex != s.owner_mapindex) {
+			// Throttle so we don't fire 2-3 WARPs while waiting for the
+			// next REPORT to confirm the merc is on the new map.
+			if (s.last_follow_tick != 0 && DIFF_TICK(now, s.last_follow_tick) < 2000) continue;
+			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
+			if (mname && mname[0]) {
+				aichrif_send_warp(char_fd, s.shell_id, mname,
+					(uint16)std::max<int32>(1, (int32)s.owner_x - 2),
+					(uint16)std::max<int32>(1, (int32)s.owner_y - 2));
+				// Optimistic update — REPORT will overwrite within ~1s.
+				s.cur_mapindex = s.owner_mapindex;
+				s.last_follow_tick = now;
+			}
+			continue;
+		}
+		// Same map — close gap if drifted past 3 cells.
+		int32 dx = (int32)s.cur_x - (int32)s.owner_x;
+		int32 dy = (int32)s.cur_y - (int32)s.owner_y;
+		int32 cheb = std::max(std::abs(dx), std::abs(dy));
+		if (cheb <= 3) continue;	// already close enough
+		if (s.last_follow_tick != 0 && DIFF_TICK(now, s.last_follow_tick) < 700) continue;
+		// Trail position: stand 2 cells in the direction the shell came
+		// from (just behind the owner). Doesn't matter much; map-server
+		// nudges to walkable.
+		uint16 tx = (uint16)std::max<int32>(1, (int32)s.owner_x - (dx > 0 ? -2 : 2));
+		uint16 ty = (uint16)std::max<int32>(1, (int32)s.owner_y - (dy > 0 ? -2 : 2));
+		aichrif_send_walk_to(char_fd, s.shell_id, tx, ty);
+		s.last_follow_tick = now;
+	}
+	return 0;
+}
+
 static TIMER_FUNC(aichrif_wander_timer){
 	if (aichrif_state != 2 || char_fd < 0) return 0;
 	t_tick now_w = gettick();
@@ -683,6 +1060,9 @@ static TIMER_FUNC(aichrif_wander_timer){
 		if (s.hp == 0) continue;
 		if (s.sitting) continue; // sitting → stay put
 		if (s.fleeing_until && DIFF_TICK(now_w, s.fleeing_until) < 0) continue;
+		// Phase 6 — mercenary shells follow their owner via aichrif_follow_timer;
+		// they don't get to wander.
+		if (s.owner_aid != 0) continue;
 		// Anchor walk on the shell's current position (REPORT-fed). Falls back
 		// to spawn anchor if no REPORT yet (cur_x is 0).
 		uint16 cx = s.cur_x ? s.cur_x : s.base_x;
@@ -734,6 +1114,10 @@ static TIMER_FUNC(aichrif_combat_timer){
 		if (s.last_report_tick == 0) continue;
 		if (DIFF_TICK(now, s.last_report_tick) > 3000) continue;
 		if (s.hp == 0) continue;
+		// Phase 6 — mercenary shells run their support rotation in
+		// aichrif_support_timer; the combat tick for autonomous engagement
+		// doesn't apply to them.
+		if (s.owner_aid != 0) continue;
 		// Town shells don't engage — they're meant to look like idle traffic
 		// (chat, sit, vending in Phase 3). Field/dungeon always hunt.
 		if (s.cat == spawn_category::TOWN) continue;
@@ -799,6 +1183,123 @@ static TIMER_FUNC(aichrif_combat_timer){
 	return 0;
 }
 
+/// Phase 6 — mercenary support tick. Runs every 1.5s for shells that have
+/// an owner. Evaluates the rotation against owner HP/SP/status (no enemy
+/// needed) and casts heals/buffs/cleanses on the owner. Cursor is fixed at
+/// the start of the rotation each call, so high-priority skills (Heal at
+/// the top of the list) always win when their condition matches.
+static TIMER_FUNC(aichrif_support_timer){
+	using namespace rathena::server_ai;
+	if (aichrif_state != 2 || char_fd < 0) return 0;
+	t_tick now = gettick();
+	for (auto& s : g_shells_local) {
+		if (s.owner_aid == 0) continue;
+		if (s.suspended) continue;
+		if (s.hp == 0) continue;
+		if (!s.owner_present) continue;
+		if (s.last_report_tick == 0) continue;
+		// Throttle — same 5s cadence as combat tick for cast cooldown.
+		// Per-shell throttle: 250ms = 4 casts/sec ceiling. Matches the
+		// support tick interval so we don't waste tick budget. Real
+		// players with high DEX cast ~5/sec — close enough.
+		if (DIFF_TICK(now, s.last_cast_tick) < 250) continue;
+
+		const skill_rotation* rot = skill_picker_get(s.job);
+		if (rot == nullptr) continue;
+		shell_ctx ctx;
+		ctx.hp = s.hp; ctx.max_hp = s.max_hp;
+		ctx.sp = s.sp; ctx.max_sp = s.max_sp;
+		// Phase 6 — Target=TARGET on a merc means "owner's current target"
+		// (used for offensive support like PR_LEXAETERNA). When the owner
+		// isn't fighting, has_target stays false so those entries skip.
+		ctx.has_target = (s.owner_target_id != 0);
+		ctx.self_statuses = s.self_statuses;
+		ctx.owner_present = true;
+		ctx.owner_hp_pct = s.owner_hp_pct;
+		ctx.owner_sp_pct = s.owner_sp_pct;
+		ctx.owner_statuses = s.owner_statuses;
+		// Phase 6 — emergency mode filtering.
+		// "owner_damaged": HP just dropped → only heals/cleanses; a buff
+		// inserted between two heals burns 250ms cast + 500ms after-cast
+		// and can let the party die.
+		// "owner_moving": owner moved in last second → only heals,
+		// otherwise the merc casts buffs in place and falls behind.
+		bool owner_damaged = (s.last_owner_damage_tick != 0) &&
+			DIFF_TICK(now, s.last_owner_damage_tick) < 3000;
+		bool owner_moving = (s.last_owner_move_tick != 0) &&
+			DIFF_TICK(now, s.last_owner_move_tick) < 1000;
+		const skill_entry* pick = skill_picker_choose(*rot, ctx,
+			/*cursor=*/nullptr, &s.skill_cooldown_until, now);
+		if (pick == nullptr || pick->skill_name.empty()) continue;
+		// Skip non-emergency skills while damaged or moving.
+		if (owner_damaged || owner_moving) {
+			bool is_emergency =
+				pick->condition == skill_cond::HP_BELOW          ||
+				pick->condition == skill_cond::OWNER_HP_BELOW    ||
+				pick->condition == skill_cond::ALLY_HP_BELOW     ||
+				pick->condition == skill_cond::OWNER_STATUS;
+			if (!is_emergency) continue;
+		}
+		uint8 kind = AI_CAST_KIND_ID;
+		uint32 cast_target = 0;
+		switch (pick->target) {
+			case skill_target::OWNER:
+				cast_target = s.owner_aid;
+				break;
+			case skill_target::SELF:
+				kind = AI_CAST_KIND_SELF;
+				break;
+			case skill_target::TARGET:
+				if (s.owner_target_id == 0) continue;
+				cast_target = s.owner_target_id;
+				break;
+			case skill_target::PARTY: {
+				// Iterate the party roster and cast on the first member
+				// whose state still matches the skill's condition (e.g.
+				// missing the buff). The picker already chose this skill
+				// because the condition passed for the OWNER; we re-check
+				// per member so we don't waste a cast on someone already
+				// buffed/full-HP.
+				bool found = false;
+				// Try owner first.
+				shell_ctx mctx = ctx;
+				if (skill_picker_cond_passes(*pick, mctx)) {
+					cast_target = s.owner_aid;
+					found = true;
+				}
+				for (uint8 i = 0; !found && i < s.party_count; i++) {
+					const auto& m = s.party_members[i];
+					if (m.account_id == 0) continue;
+					mctx.owner_present  = true;
+					mctx.owner_hp_pct   = m.hp_pct;
+					mctx.owner_sp_pct   = m.sp_pct;
+					mctx.owner_statuses = m.statuses;
+					if (skill_picker_cond_passes(*pick, mctx)) {
+						cast_target = m.account_id;
+						found = true;
+					}
+				}
+				if (!found) continue;
+				break;
+			}
+			default:
+				continue;	// ALLY not applicable to pure-support mercs
+		}
+		aichrif_send_cast(char_fd, s.shell_id, pick->skill_name.c_str(),
+			pick->level, kind, cast_target, 0, 0);
+		s.last_cast_tick = now;
+		// Phase 6 — per-skill cooldown. YAML override > 800ms default.
+		// 800ms is enough for the SC bit to round-trip on the next
+		// REPORT (1s period) so buffs naturally stop after the SC lands.
+		// Heals/cleanses fire at this rate during emergencies.
+		// Long buffs without reliable SC tracking (Offertorium 90s,
+		// Sacrament/Expiatio 4-5min) override via YAML Cooldown field.
+		t_tick cdms = (pick->cooldown_ms > 0) ? (t_tick)pick->cooldown_ms : 800;
+		s.skill_cooldown_until[pick->skill_name] = now + cdms;
+	}
+	return 0;
+}
+
 /// Phase 3.13c: post-spawn warp from prontera to the shell's intended map.
 /// Runs every 500ms, fires AI_CMD_WARP for shells whose warp_at_tick has
 /// elapsed. Once warped, shell behavior takes over.
@@ -853,6 +1354,7 @@ static TIMER_FUNC(aichrif_respawn_timer){
 	t_tick now = gettick();
 	for (auto& s : g_shells_local) {
 		if (s.respawn_at_tick == 0) continue;
+		if (s.suspended) continue;
 		if (now < s.respawn_at_tick) continue;
 
 		// 1. Tear the dead shell down on the map side.
@@ -882,6 +1384,8 @@ static TIMER_FUNC(aichrif_respawn_timer){
 		init.dex_ = s.init_snap.dex_; init.luk_ = s.init_snap.luk_;
 		init.speed = s.init_snap.speed;
 		for (int es = 0; es < 10; es++) init.equip[es] = s.init_snap.equip[es];
+		init.owner_aid = s.init_snap.owner_aid;	// Phase 6 — preserve merc binding
+		init.owner_cid = s.init_snap.owner_cid;
 		aichrif_send_shell_spawn(char_fd, init);
 
 		// 3. Reset transient state. cur_x/y get overwritten on next REPORT;
@@ -1035,6 +1539,14 @@ void do_init_aichrif(void){
 	// from looking jittery.
 	add_timer_func_list(aichrif_wander_timer, "aichrif_wander");
 	add_timer_interval(gettick() + 5 * 1000, aichrif_wander_timer, 0, 0, 1500);
+
+	// Phase 6 — mercenary follow loop.
+	add_timer_func_list(aichrif_follow_timer, "aichrif_follow");
+	add_timer_interval(gettick() + 6 * 1000, aichrif_follow_timer, 0, 0, 500);
+
+	// Phase 6 — mercenary support tick (heals/buffs/cleanses on owner).
+	add_timer_func_list(aichrif_support_timer, "aichrif_support");
+	add_timer_interval(gettick() + 7 * 1000, aichrif_support_timer, 0, 0, 250);
 	// Combat tick: every 250ms, re-issue ATTACK so a stalled chase resumes.
 	add_timer_func_list(aichrif_combat_timer, "aichrif_combat");
 	add_timer_interval(gettick() + 2 * 1000, aichrif_combat_timer, 0, 0, 250);

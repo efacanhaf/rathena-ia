@@ -33,6 +33,7 @@
 
 #include "achievement.hpp"
 #include "atcommand.hpp" // get_atcommand_level()
+#include "aichrif.hpp"	// aishell_is_shell()
 #include "battle.hpp" // battle_config
 #include "battleground.hpp"
 #include "buyingstore.hpp"  // struct s_buyingstore
@@ -9765,6 +9766,13 @@ int32 pc_dead(map_session_data *sd,block_list *src)
 	int32 i=0,k=0;
 	t_tick tick = gettick();
 	struct map_data *mapdata = map_getmapdata(sd->m);
+
+	// Phase 6 — ai-shell mercenaries don't have a char DB row, so the
+	// normal death pipeline (penalty, save, restart map, party leave)
+	// crashes on chrif_save or DB lookups. Bail out: hp stays 0, the
+	// AI_EVT_DIED hook on map-side aichrif handles state for the shell.
+	if (aishell_is_shell((uint32)sd->status.account_id))
+		return 0;
 
 	// Activate Steel body if a super novice dies at 99+% exp [celest]
 	// Super Novices have no kill or die functions attached when saved by their angel

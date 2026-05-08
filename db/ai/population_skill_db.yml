@@ -28,41 +28,41 @@
 #   Skills:          Sequence of skill entries (required).
 #     SkillId:       Skill name (e.g. SM_BASH) or numeric ID (required).
 #     Level:         Skill level to cast. (Default: 1)
-#     Rate:          1–10000 per-10000 chance; 0 disables entry. (Default: 10000)
+#     Rate:          1â€“10000 per-10000 chance; 0 disables entry. (Default: 10000)
 #     State:         0=any, 1=has_target (combat), 2=no_target (roam). (Default: 0)
 #     Target:        0=current target, 1=self, 2=ally (nearest BL_PC in skill range). (Default: 0)
 #     Condition:     Gate condition name. (Default: always)
-#       always           — no gate; always eligible.
-#       hp_below         — self HP% < CondValue.
-#       sp_below         — self SP% < CondValue.
-#       hp_above         — self HP% > CondValue.
-#       enemy_hp_below   — target HP% < CondValue.
-#       enemy_hp_above   — target HP% > CondValue.
-#       enemy_status     — target has SC named in CondValue (e.g. SC_FREEZE).
-#       not_enemy_status — target does NOT have SC named in CondValue.
-#       self_status      — self has SC named in CondValue.
-#       not_self_status  — self does NOT have SC named in CondValue.
-#       distance_below   — distance to target <= CondValue cells.
-#       distance_above   — distance to target >  CondValue cells.
-#       enemy_count_nearby — >= CondValue enemies within detection range.
-#       map_zone         — spawned in zone: 1=town, 2=field, 3=dungeon.
-#       melee_attacked   — a melee-range enemy is targeting this shell.
-#       range_attacked   — a ranged enemy is targeting this shell.
-#       ally_hp_below    — any ally in skill range has HP% < CondValue.
-#       ally_status      — any ally in skill range has SC named in CondValue.
-#       not_ally_status  — no ally in skill range has SC named in CondValue.
-#       has_sphere       — shell has >= CondValue spirit spheres.
-#       enemy_hidden     — any enemy in detection range is hidden/cloaked.
-#       enemy_casting    — target is currently casting a skill.
-#       enemy_casting_ground — target is casting a ground-targeted skill.
-#       cell_has_skill_unit — self cell has an active skill unit on it.
-#       self_targeted    — an enemy is targeting this shell specifically.
-#       enemy_element    — target's element == CondValue (0=Neutral..9=Undead).
-#       enemy_race       — target's race == CondValue (0=Formless..9=Dragon).
-#       ally_count_nearby — >= CondValue allies within detection range.
-#       enemy_is_boss    — target is an MVP/boss monster.
-#       sp_above         — self SP% > CondValue.
-#     CondValue:     Numeric threshold (0–100 for %/cells) or SC name string
+#       always           â€” no gate; always eligible.
+#       hp_below         â€” self HP% < CondValue.
+#       sp_below         â€” self SP% < CondValue.
+#       hp_above         â€” self HP% > CondValue.
+#       enemy_hp_below   â€” target HP% < CondValue.
+#       enemy_hp_above   â€” target HP% > CondValue.
+#       enemy_status     â€” target has SC named in CondValue (e.g. SC_FREEZE).
+#       not_enemy_status â€” target does NOT have SC named in CondValue.
+#       self_status      â€” self has SC named in CondValue.
+#       not_self_status  â€” self does NOT have SC named in CondValue.
+#       distance_below   â€” distance to target <= CondValue cells.
+#       distance_above   â€” distance to target >  CondValue cells.
+#       enemy_count_nearby â€” >= CondValue enemies within detection range.
+#       map_zone         â€” spawned in zone: 1=town, 2=field, 3=dungeon.
+#       melee_attacked   â€” a melee-range enemy is targeting this shell.
+#       range_attacked   â€” a ranged enemy is targeting this shell.
+#       ally_hp_below    â€” any ally in skill range has HP% < CondValue.
+#       ally_status      â€” any ally in skill range has SC named in CondValue.
+#       not_ally_status  â€” no ally in skill range has SC named in CondValue.
+#       has_sphere       â€” shell has >= CondValue spirit spheres.
+#       enemy_hidden     â€” any enemy in detection range is hidden/cloaked.
+#       enemy_casting    â€” target is currently casting a skill.
+#       enemy_casting_ground â€” target is casting a ground-targeted skill.
+#       cell_has_skill_unit â€” self cell has an active skill unit on it.
+#       self_targeted    â€” an enemy is targeting this shell specifically.
+#       enemy_element    â€” target's element == CondValue (0=Neutral..9=Undead).
+#       enemy_race       â€” target's race == CondValue (0=Formless..9=Dragon).
+#       ally_count_nearby â€” >= CondValue allies within detection range.
+#       enemy_is_boss    â€” target is an MVP/boss monster.
+#       sp_above         â€” self SP% > CondValue.
+#     CondValue:     Numeric threshold (0â€“100 for %/cells) or SC name string
 #                    for *_status conditions. (Default: 0)
 #
 # Note: Sphere-chain jobs (Monk=15, Champion=4016) run the sphere-chain state
@@ -100,7 +100,7 @@ Body:
     Skills:
       # -- passive --
       - { SkillId: MG_SRECOVERY,     Level: 10, Rate: 10000 }
-      # -- offense (elemental combo: freeze → lightning) --
+      # -- offense (elemental combo: freeze â†’ lightning) --
       - { SkillId: MG_LIGHTNINGBOLT, Level: 10, Rate: 10000, Condition: enemy_status, CondValue: SC_FREEZE }
       - { SkillId: MG_FIREBOLT,      Level: 10, Rate: 10000 }
       - { SkillId: MG_COLDBOLT,      Level: 10, Rate: 8000  }
@@ -129,34 +129,20 @@ Body:
       - { SkillId: AC_CONCENTRATION, Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_CONCENTRATE }
 
   # JOB_ACOLYTE = 4
+  # Acolyte mercenary support kit (Phase 6).
+  # Order is priority â€” the support tick uses cursor=null and returns the
+  # first skill whose condition matches. Heal first, then status cleanse,
+  # then buff refresh.
+  # Target: 4 = PARTY â€” iterates owner+party, casts on first member matching
+  # the condition. Heals find lowest-HP, buffs find first member missing.
   - JobId: 4
     Skills:
-      # -- passive --
-      - { SkillId: AL_DP,          Level: 10, Rate: 10000 }
-      - { SkillId: AL_DEMONBANE,   Level: 10, Rate: 10000 }
-      # -- offense --
-      - { SkillId: AL_HOLYLIGHT,  Level: 1,  Rate: 10000 }
-      # -- self-heal --
-      - { SkillId: AL_HEAL,       Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 50 }
-      # -- ally heal --
-      - { SkillId: AL_HEAL,       Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
-      # -- ally buffs --
-      - { SkillId: AL_BLESSING,   Level: 10, Rate: 8000,  Target: 2, Condition: not_ally_status, CondValue: SC_BLESSING }
-      - { SkillId: AL_INCAGI,     Level: 10, Rate: 8000,  Target: 2, Condition: not_ally_status, CondValue: SC_INCREASEAGI }
-      # -- self-buffs --
-      - { SkillId: AL_ANGELUS,    Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_ANGELUS }
-      # -- defense --
-      - { SkillId: AL_PNEUMA,     Level: 1,  Target: 1, Condition: range_attacked }
-      # -- debuff --
-      - { SkillId: AL_DECAGI,     Level: 10, Rate: 5000 }
-      - { SkillId: AL_CRUCIS,     Level: 10, Rate: 5000,  Target: 1 }
-      # -- support --
-      - { SkillId: AL_CURE,       Level: 1,  Rate: 8000,  Target: 1, Condition: self_status, CondValue: SC_SILENCE }
-      # -- detection --
-      - { SkillId: AL_RUWACH,     Level: 1,  Rate: 10000, Target: 1, Condition: enemy_hidden }
-      # -- town idle buffing --
-      - { SkillId: AL_BLESSING,   Level: 10, Rate: 3000, State: 2, Target: 2, Condition: map_zone, CondValue: 1 }
-      - { SkillId: AL_INCAGI,     Level: 10, Rate: 3000, State: 2, Target: 2, Condition: map_zone, CondValue: 1 }
+      - { SkillId: AL_HEAL,       Level: 5,  Rate: 10000, Target: 4, Condition: owner_hp_below,    CondValue: 70 }
+      - { SkillId: AL_CURE,       Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,      CondValue: silence }
+      - { SkillId: AL_CURE,       Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,      CondValue: blind }
+      - { SkillId: AL_BLESSING,   Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status,  CondValue: blessing }
+      - { SkillId: AL_INCAGI,     Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status,  CondValue: increase_agi }
+      - { SkillId: AL_ANGELUS,    Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,   CondValue: angelus }
 
   # JOB_MERCHANT = 5
   - JobId: 5
@@ -211,50 +197,128 @@ Body:
       - { SkillId: KN_TWOHANDQUICKEN, Level: 10, Target: 1, Condition: not_self_status, CondValue: SC_TWOHANDQUICKEN }
       - { SkillId: KN_AUTOCOUNTER,    Level: 5,  Rate: 5000, Target: 1, Condition: melee_attacked }
 
-  # JOB_PRIEST = 8
+  # JOB_PRIEST = 8 â€” mercenary support kit (Phase 6).
+  # Order = priority. Self-survival first, then owner emergencies, then
+  # status cleansing, then offensive support, then buffs.
   - JobId: 8
     Skills:
-      # -- passive --
-      - { SkillId: PR_MACEMASTERY,  Level: 10, Rate: 10000 }
-      - { SkillId: MG_SRECOVERY,    Level: 10, Rate: 10000 }
-      # -- offense --
-      - { SkillId: PR_MAGNUS,       Level: 10, Rate: 10000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: PR_TURNUNDEAD,   Level: 10, Rate: 8000  }
-      - { SkillId: AL_HOLYLIGHT,    Level: 1,  Rate: 6000  }
-      - { SkillId: PR_LEXAETERNA,   Level: 1,  Rate: 9000, Condition: not_enemy_status, CondValue: SC_AETERNA }
-      - { SkillId: PR_LEXDIVINA,    Level: 10, Rate: 5000, Condition: not_enemy_status, CondValue: SC_SILENCE }
-      # -- self-heal --
-      - { SkillId: AL_HEAL,         Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 40 }
-      # -- ally heal --
-      - { SkillId: AL_HEAL,         Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
-      # -- ally buffs --
-      - { SkillId: AL_BLESSING,     Level: 10, Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_BLESSING }
-      - { SkillId: AL_INCAGI,       Level: 10, Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_INCREASEAGI }
-      - { SkillId: PR_KYRIE,        Level: 10, Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_KYRIE }
-      - { SkillId: PR_ASPERSIO,     Level: 5,  Rate: 7000, Target: 2, Condition: not_ally_status, CondValue: SC_ASPERSIO }
-      - { SkillId: PR_IMPOSITIO,    Level: 5,  Rate: 7000, Target: 1, Condition: not_self_status, CondValue: SC_IMPOSITIO }
-      - { SkillId: PR_SUFFRAGIUM,   Level: 3,  Rate: 7000, Target: 1, Condition: not_self_status, CondValue: SC_SUFFRAGIUM }
-      # -- self-buffs --
-      - { SkillId: PR_MAGNIFICAT,   Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_MAGNIFICAT }
-      - { SkillId: PR_GLORIA,       Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_GLORIA }
-      # -- defense --
-      - { SkillId: AL_PNEUMA,       Level: 1,  Target: 1, Condition: range_attacked }
-      - { SkillId: MG_SAFETYWALL,   Level: 10, Target: 1, Condition: melee_attacked }
-      # -- ground heal --
-      - { SkillId: PR_SANCTUARY,    Level: 10, Rate: 6000, Target: 1, Condition: hp_below, CondValue: 60 }
-      # -- detection --
-      - { SkillId: AL_RUWACH,       Level: 1,  Rate: 10000, Target: 1, Condition: enemy_hidden }
-      # -- town idle buffing --
-      - { SkillId: AL_BLESSING,    Level: 10, Rate: 3000, State: 2, Target: 2, Condition: map_zone, CondValue: 1 }
-      - { SkillId: AL_INCAGI,      Level: 10, Rate: 3000, State: 2, Target: 2, Condition: map_zone, CondValue: 1 }
-      - { SkillId: PR_KYRIE,       Level: 10, Rate: 3000, State: 2, Target: 2, Condition: map_zone, CondValue: 1 }
+      # Resurrect first if owner is dead — Heal on a corpse does nothing.
+      - { SkillId: ALL_RESURRECTION, Level: 4, Rate: 10000, Target: 4, Condition: owner_hp_below, CondValue: 1 }
+      # Self-heal so the merc survives stray AoE.
+      - { SkillId: AL_HEAL,         Level: 10, Rate: 10000, Target: 1, Condition: hp_below,        CondValue: 50 }
+      # Owner emergency heal (high threshold so support feels responsive).
+      - { SkillId: AL_HEAL,         Level: 10, Rate: 10000, Target: 4, Condition: owner_hp_below,  CondValue: 75 }
+      # Status cleanse on owner.
+      - { SkillId: AL_CURE,         Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,    CondValue: silence }
+      - { SkillId: AL_CURE,         Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,    CondValue: blind }
+      # Kyrie shield (PR_KYRIE has its own duration; refresh when missing).
+      - { SkillId: PR_KYRIE,        Level: 10, Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: kyrie }
+      - { SkillId: PR_KYRIE,        Level: 10, Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: kyrie }
+      # Self buffs first â€” the merc must keep itself buffed too.
+      - { SkillId: PR_MAGNIFICAT,   Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: magnificat }
+      - { SkillId: AL_ANGELUS,      Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: angelus }
+      - { SkillId: PR_GLORIA,       Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: gloria }
+      - { SkillId: AL_BLESSING,     Level: 10, Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: blessing }
+      - { SkillId: AL_INCAGI,       Level: 10, Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: increase_agi }
+      # Owner buffs (single-target Priest versions).
+      - { SkillId: AL_BLESSING,     Level: 10, Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: blessing }
+      - { SkillId: AL_INCAGI,       Level: 10, Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: increase_agi }
+      - { SkillId: PR_GLORIA,       Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: gloria }
+      - { SkillId: PR_IMPOSITIO,    Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: impositio }
+      # Offensive support on owner's current target â€” last so support
+      # work clears first.
+      - { SkillId: PR_LEXAETERNA,   Level: 1,  Rate: 7000,  Target: 0 }
+      - { SkillId: PR_LEXDIVINA,    Level: 5,  Rate: 5000,  Target: 0 }
+
+  # JOB_HIGH_PRIEST = 4014 â€” Phase 6 (Trans Priest).
+  - JobId: 4014
+    Skills:
+      - { SkillId: ALL_RESURRECTION, Level: 4, Rate: 10000, Target: 4, Condition: owner_hp_below, CondValue: 1 }
+      # Self-heal (HP-tier has more SP/INT so heals at 60% are fine).
+      - { SkillId: AL_HEAL,         Level: 10, Rate: 10000, Target: 1, Condition: hp_below,        CondValue: 60 }
+      # Owner emergency.
+      - { SkillId: AL_HEAL,         Level: 10, Rate: 10000, Target: 4, Condition: owner_hp_below,  CondValue: 80 }
+      # Status cleanse.
+      - { SkillId: AL_CURE,         Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,    CondValue: silence }
+      - { SkillId: AL_CURE,         Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,    CondValue: blind }
+      # Assumptio + Kyrie shields, both for self and for owner.
+      - { SkillId: HP_ASSUMPTIO,    Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: assumptio }
+      - { SkillId: HP_ASSUMPTIO,    Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: assumptio }
+      - { SkillId: PR_KYRIE,        Level: 10, Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: kyrie }
+      - { SkillId: PR_KYRIE,        Level: 10, Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: kyrie }
+      # Self buffs.
+      - { SkillId: PR_MAGNIFICAT,   Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: magnificat }
+      - { SkillId: AL_ANGELUS,      Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: angelus }
+      - { SkillId: PR_GLORIA,       Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: gloria }
+      - { SkillId: AL_BLESSING,     Level: 10, Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: blessing }
+      - { SkillId: AL_INCAGI,       Level: 10, Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: increase_agi }
+      # Owner buffs.
+      - { SkillId: AL_BLESSING,     Level: 10, Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: blessing }
+      - { SkillId: AL_INCAGI,       Level: 10, Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: increase_agi }
+      - { SkillId: PR_GLORIA,       Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: gloria }
+      - { SkillId: PR_IMPOSITIO,    Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: impositio }
+      # Offensive support â€” late so support clears first.
+      - { SkillId: PR_LEXAETERNA,   Level: 1,  Rate: 8000,  Target: 0 }
+      - { SkillId: PR_LEXDIVINA,    Level: 5,  Rate: 6000,  Target: 0 }
+
+  # JOB_ARCH_BISHOP = 4063 â€” Phase 6 (3rd class).
+  # AB priorities, in order:
+  #   1. Stay alive (self-heal).
+  #   2. Owner emergency heal (Highness/Coluceo/Heal).
+  #   3. Status cleanse.
+  #   4. Shields (Assumptio, Kyrie via Praefatio for the whole party).
+  #   5. Self-only buffs (Offertorium, Magnificat, Angelus, Renovatio).
+  #   6. Party-wide AoE buffs cast on self â€” Clementia, Canto, Sacrament
+  #      hit every party member in range (owner + merc + anyone else).
+  #      A single cast replaces 2-3 single-target casts â†’ faster setup.
+  #   7. Single-target buffs that have no AoE version (Gloria, Impositio).
+  #   8. Offensive support (Lex Aeterna).
+  - JobId: 4063
+    Skills:
+      - { SkillId: ALL_RESURRECTION, Level: 4,  Rate: 10000, Target: 4, Condition: owner_hp_below, CondValue: 1 }
+      # 1. Self-heal so the AB stays alive.
+      - { SkillId: AL_HEAL,          Level: 10, Rate: 10000, Target: 1, Condition: hp_below,        CondValue: 65 }
+      # 2. Owner emergency. Coluceo Heal (AB_CHEAL) is party-AoE â€” cast on
+      #    self heals everyone in range, including merc; saves a tick.
+      - { SkillId: AB_CHEAL,         Level: 3,  Rate: 10000, Target: 1, Condition: owner_hp_below,  CondValue: 60 }
+      - { SkillId: AB_HIGHNESSHEAL,  Level: 5,  Rate: 10000, Target: 4, Condition: owner_hp_below,  CondValue: 75 }
+      - { SkillId: AL_HEAL,          Level: 10, Rate: 10000, Target: 4, Condition: owner_hp_below,  CondValue: 85 }
+      # Renovatio HoT â€” keeps the bar topped while not in danger.
+      - { SkillId: AB_RENOVATIO,     Level: 1,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: renovatio }
+      # 3. Cleanse.
+      - { SkillId: AB_CLEARANCE,     Level: 5,  Rate: 10000, Target: 4, Condition: owner_status,    CondValue: silence }
+      - { SkillId: AL_CURE,          Level: 1,  Rate: 10000, Target: 4, Condition: owner_status,    CondValue: blind }
+      # 4. Shields. Praefatio is the party version of Kyrie (cast on self).
+      - { SkillId: AB_PRAEFATIO,     Level: 10, Rate: 10000, Target: 1, Condition: not_owner_status, CondValue: kyrie }
+      - { SkillId: HP_ASSUMPTIO,     Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: assumptio }
+      - { SkillId: HP_ASSUMPTIO,     Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: assumptio }
+      # 5. Self-only buffs the AB always wants up.
+      - { SkillId: PR_MAGNIFICAT,    Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: magnificat }
+      - { SkillId: AL_ANGELUS,       Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: angelus }
+      # 6. Party-wide AoE buffs (cast on self â†’ AoE ally).
+      - { SkillId: AB_CLEMENTIA,     Level: 3,  Rate: 10000, Target: 1, Condition: not_owner_status, CondValue: blessing }
+      - { SkillId: AB_CANTO,         Level: 3,  Rate: 10000, Target: 1, Condition: not_owner_status, CondValue: increase_agi }
+      # AB_SECRAMENT and AB_EXPIATIO are single-target Support skills (not
+      # party AoE) â€” cast directly on the owner so the SC lands on them.
+      # Long Cooldowns guard against the SC bit sometimes not round-tripping
+      # via REPORT (causing infinite re-casts otherwise).
+      - { SkillId: AB_SECRAMENT,     Level: 5,  Rate: 10000, Target: 3, Condition: not_owner_status, CondValue: secrament,   Cooldown: 240000 }
+      - { SkillId: AB_EXPIATIO,      Level: 5,  Rate: 10000, Target: 3, Condition: not_owner_status, CondValue: expiatio,    Cooldown: 240000 }
+      # Offertorium is a self-buff that boosts the AB's heal output (90s).
+      - { SkillId: AB_OFFERTORIUM,   Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: offertorium, Cooldown: 90000 }
+      # 7. Single-target buffs without AoE version.
+      - { SkillId: PR_GLORIA,        Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status,  CondValue: gloria }
+      - { SkillId: PR_GLORIA,        Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: gloria }
+      - { SkillId: PR_IMPOSITIO,     Level: 5,  Rate: 10000, Target: 4, Condition: not_owner_status, CondValue: impositio }
+      # 8. Offensive support.
+      - { SkillId: PR_LEXAETERNA,    Level: 1,  Rate: 9000,  Target: 0 }
 
   # JOB_WIZARD = 9
   - JobId: 9
     Skills:
       # -- passive --
       - { SkillId: MG_SRECOVERY,    Level: 10, Rate: 10000 }
-      # -- offense (elemental combo: freeze → Jupitel) --
+      # -- offense (elemental combo: freeze â†’ Jupitel) --
       - { SkillId: WZ_JUPITEL,      Level: 10, Rate: 10000, Condition: enemy_status, CondValue: SC_FREEZE }
       - { SkillId: WZ_STORMGUST,    Level: 10, Rate: 8000, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: WZ_VERMILION,    Level: 10, Rate: 7000  }
@@ -390,7 +454,7 @@ Body:
       - { SkillId: MO_STEELBODY,        Level: 5,  Rate: 5000, Target: 1, Condition: hp_below, CondValue: 30 }
       - { SkillId: MO_BLADESTOP,        Level: 5,  Rate: 6000, Target: 1, Condition: melee_attacked }
 
-  # JOB_SAGE = 16 (elemental combos: freeze target → lightning follow-up)
+  # JOB_SAGE = 16 (elemental combos: freeze target â†’ lightning follow-up)
   - JobId: 16
     Skills:
       # -- passive --
@@ -597,7 +661,7 @@ Body:
       # -- passive --
       - { SkillId: MG_SRECOVERY,    Level: 10, Rate: 10000 }
       - { SkillId: HW_SOULDRAIN,    Level: 10, Rate: 10000 }
-      # -- offense (elemental combo: freeze → Jupitel) --
+      # -- offense (elemental combo: freeze â†’ Jupitel) --
       - { SkillId: WZ_JUPITEL,      Level: 10, Rate: 10000, Condition: enemy_status, CondValue: SC_FREEZE }
       - { SkillId: WZ_STORMGUST,    Level: 10, Rate: 8000, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: WZ_METEOR,       Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 3 }
@@ -752,7 +816,7 @@ Body:
       - { SkillId: MO_STEELBODY,        Level: 5,  Rate: 5000, Target: 1, Condition: hp_below, CondValue: 25 }
       - { SkillId: MO_BLADESTOP,        Level: 5,  Rate: 6000, Target: 1, Condition: melee_attacked }
 
-  # JOB_PROFESSOR = 4017 (elemental combos: freeze → lightning; double-cast window)
+  # JOB_PROFESSOR = 4017 (elemental combos: freeze â†’ lightning; double-cast window)
   - JobId: 4017
     Skills:
       # -- passive --
@@ -962,7 +1026,7 @@ Body:
       - { SkillId: HW_SOULDRAIN,       Level: 10, Rate: 10000 }
       - { SkillId: WL_RADIUS,          Level: 3,  Rate: 10000 }
       - { SkillId: WL_FREEZE_SP,       Level: 10, Rate: 10000 }
-      # -- offense (priority: frozen combo → AoE → single) --
+      # -- offense (priority: frozen combo â†’ AoE â†’ single) --
       - { SkillId: WZ_JUPITEL,         Level: 10, Rate: 10000, Condition: enemy_status, CondValue: SC_FREEZE }
       - { SkillId: WL_JACKFROST,       Level: 5,  Rate: 9000, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: WL_CRIMSONROCK,     Level: 5,  Rate: 8000  }
@@ -1132,49 +1196,11 @@ Body:
       # -- town idle buffing --
       - { SkillId: AB_CLEMENTIA,       Level: 3,  Rate: 3000, State: 2, Target: 1, Condition: map_zone, CondValue: 1 }
       - { SkillId: AB_CANTO,           Level: 3,  Rate: 3000, State: 2, Target: 1, Condition: map_zone, CondValue: 1 }
-  - JobId: 4063
-    Skills:
-      # -- passive --
-      - { SkillId: AL_DP,             Level: 10, Rate: 10000 }
-      - { SkillId: AL_DEMONBANE,      Level: 10, Rate: 10000 }
-      - { SkillId: PR_MACEMASTERY,    Level: 10, Rate: 10000 }
-      - { SkillId: MG_SRECOVERY,      Level: 10, Rate: 10000 }
-      - { SkillId: HP_MEDITATIO,      Level: 10, Rate: 10000 }
-      - { SkillId: HP_MANARECHARGE,   Level: 5,  Rate: 10000 }
-      - { SkillId: AB_ADORAMUS,        Level: 10, Rate: 10000 }
-      - { SkillId: AB_JUDEX,           Level: 10, Rate: 8000  }
-      - { SkillId: AB_DUPLELIGHT,      Level: 10, Rate: 6000, Target: 1 }
-      - { SkillId: PR_MAGNUS,          Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: PR_LEXAETERNA,      Level: 1,  Rate: 9000, Condition: not_enemy_status, CondValue: SC_AETERNA }
-      - { SkillId: AB_HIGHNESSHEAL,    Level: 5,  Rate: 10000, Target: 1, Condition: hp_below, CondValue: 50 }
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 40 }
-      - { SkillId: AB_HIGHNESSHEAL,    Level: 5,  Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 70 }
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
-      - { SkillId: AB_CHEAL,           Level: 3,  Rate: 8000, Target: 1, Condition: ally_hp_below, CondValue: 70 }
-      - { SkillId: AB_CLEMENTIA,       Level: 3,  Rate: 8000, Target: 1, Condition: not_self_status, CondValue: SC_BLESSING }
-      - { SkillId: AB_CANTO,           Level: 3,  Rate: 8000, Target: 1, Condition: not_self_status, CondValue: SC_INCREASEAGI }
-      - { SkillId: AB_PRAEFATIO,       Level: 10, Rate: 8000, Target: 1, Condition: not_self_status, CondValue: SC_KYRIE }
-      - { SkillId: AB_EXPIATIO,        Level: 5,  Rate: 7000, Target: 2, Condition: not_ally_status, CondValue: SC_EXPIATIO }
-      - { SkillId: AB_SECRAMENT,       Level: 5,  Rate: 7000, Target: 2, Condition: not_ally_status, CondValue: SC_SECRAMENT }
-      - { SkillId: PR_ASPERSIO,        Level: 5,  Rate: 6000, Target: 2, Condition: not_ally_status, CondValue: SC_ASPERSIO }
-      - { SkillId: HP_ASSUMPTIO,       Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_ASSUMPTIO }
-      - { SkillId: PR_MAGNIFICAT,      Level: 5,  Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_MAGNIFICAT }
-      - { SkillId: PR_GLORIA,          Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_GLORIA }
-      - { SkillId: AB_OFFERTORIUM,     Level: 5,  Rate: 7000,  Target: 1, Condition: not_self_status, CondValue: SC_OFFERTORIUM }
-      - { SkillId: AB_RENOVATIO,       Level: 4,  Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_RENOVATIO }
-      - { SkillId: AB_LAUDAAGNUS,      Level: 4,  Rate: 7000, Target: 1 }
-      - { SkillId: AB_LAUDARAMUS,      Level: 4,  Rate: 7000, Target: 1 }
-      - { SkillId: AB_ORATIO,          Level: 10, Rate: 6000, Target: 1 }
-      - { SkillId: AB_SILENTIUM,       Level: 5,  Rate: 5000, Target: 1, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: AB_CLEARANCE,       Level: 5,  Rate: 5000, Target: 2, Condition: ally_status, CondValue: SC_POISON }
-      - { SkillId: AL_PNEUMA,          Level: 1,  Target: 1, Condition: range_attacked }
-      - { SkillId: MG_SAFETYWALL,      Level: 10, Target: 1, Condition: melee_attacked }
-      - { SkillId: AL_RUWACH,          Level: 1,  Rate: 10000, Target: 1, Condition: enemy_hidden }
-      - { SkillId: HP_BASILICA,        Level: 5,  Rate: 4000, Target: 1, Condition: enemy_count_nearby, CondValue: 3 }
-      - { SkillId: AB_EPICLESIS,       Level: 5,  Rate: 4000, Target: 1, Condition: ally_hp_below, CondValue: 30 }
-      # -- town idle buffing --
-      - { SkillId: AB_CLEMENTIA,       Level: 3,  Rate: 3000, State: 2, Target: 1, Condition: map_zone, CondValue: 1 }
-      - { SkillId: AB_CANTO,           Level: 3,  Rate: 3000, State: 2, Target: 1, Condition: map_zone, CondValue: 1 }
+  # NOTE: Arch Bishop (4063) merc rotation lives near the top of this file
+  # alongside the rest of the Acolyte/Priest/HP line (Phase 6). The old
+  # autonomous AB rotation that was here was removed because rA's skill
+  # picker keys by JobId and a duplicate would have overwritten the merc
+  # one with autonomous-style targeting.
 
   # JOB_MECHANIC = 4058 / JOB_MECHANIC_T = 4064
   - JobId: 4058

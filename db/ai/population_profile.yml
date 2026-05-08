@@ -277,6 +277,75 @@ Body:
       Dex: 95
       Luk: 35
       Equip: { Weapon: 1613, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  # Phase 6 — Acolyte → Priest → High Priest → Arch Bishop. Mercenary
+  # support kit; tiers map to who-the-player-can-hire. Stats lean
+  # INT/DEX (heal power + cast speed) with enough VIT to survive a hit.
+  # Equipment is generic Holy Stick / Saint Robe class; gear pools
+  # come later in Phase B.
+  - Job: 4  # Acolyte
+    T0:
+      BaseLevel: 35
+      JobLevel: 40
+      Str: 10
+      Agi: 18
+      Vit: 22
+      Int: 38
+      Dex: 30
+      Luk: 12
+      Equip: { Weapon: 1504, Armor: 2305, Shoes: 2401, AccR: 2607 }
+  - Job: 8  # Priest
+    T1:
+      BaseLevel: 60
+      JobLevel: 45
+      Str: 12
+      Agi: 25
+      Vit: 35
+      Int: 70
+      Dex: 55
+      Luk: 20
+      Equip: { Weapon: 1518, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 90
+      JobLevel: 60
+      Str: 18
+      Agi: 40
+      Vit: 50
+      Int: 95
+      Dex: 80
+      Luk: 30
+      Equip: { Weapon: 1524, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4014  # High Priest
+    T1:
+      BaseLevel: 75
+      JobLevel: 50
+      Str: 15
+      Agi: 35
+      Vit: 45
+      Int: 85
+      Dex: 70
+      Luk: 25
+      Equip: { Weapon: 1524, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+    T2:
+      BaseLevel: 99
+      JobLevel: 70
+      Str: 20
+      Agi: 50
+      Vit: 60
+      Int: 99
+      Dex: 90
+      Luk: 35
+      Equip: { Weapon: 1530, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4063  # Arch Bishop
+    T2:
+      BaseLevel: 130
+      JobLevel: 50
+      Str: 30
+      Agi: 60
+      Vit: 70
+      Int: 120
+      Dex: 110
+      Luk: 50
+      Equip: { Weapon: 1530, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
   - Job: 16  # Sage
     T1:
       BaseLevel: 65

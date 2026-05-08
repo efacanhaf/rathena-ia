@@ -9,6 +9,7 @@
 #include <common/cli.hpp>
 #include <common/core.hpp>
 #include <common/malloc.hpp>
+#include <common/mapindex.hpp>
 #include <common/showmsg.hpp>
 #include <common/socket.hpp>
 #include <common/strlib.hpp>
@@ -67,6 +68,24 @@ int32 parse_console(const char* buf){
 			names_generate(name);
 			ShowInfo("  shell #%d: id=%u name=%s\n", i + 1, id, name);
 		}
+	} else if (strncmpi(buf, "hire ", 5) == 0) {
+		// Phase 6 — manual mercenary hire from the console (Phase A test path,
+		// before the in-game NPC ships in Phase C).
+		// Usage: hire <owner_aid> <owner_cid> <map> <x> <y> [job=8] [tier=2] [dur_ms=600000]
+		uint32 owner_aid = 0, owner_cid = 0;
+		char mapn[24] = {0};
+		uint32 x = 0, y = 0;
+		uint32 job = 8, tier = 2, dur = 600000;
+		int n = sscanf(buf + 5, "%u %u %23s %u %u %u %u %u",
+			&owner_aid, &owner_cid, mapn, &x, &y, &job, &tier, &dur);
+		if (n < 5) {
+			ShowInfo("hire: usage: hire <owner_aid> <owner_cid> <map> <x> <y> [job=8] [tier=2] [dur_ms=600000]\n");
+		} else {
+			uint32 sid = aichrif_hire((uint16)job, (uint8)tier, owner_aid, owner_cid, mapn,
+				(uint16)x, (uint16)y, dur);
+			if (sid) ShowInfo("hired shell %u for char %u (aid %u, job=%u tier=%u %ums)\n",
+				sid, owner_cid, owner_aid, job, tier, dur);
+		}
 	} else if (strcmpi(buf, "list") == 0) {
 		aichrif_list_shells();
 	} else if (strcmpi(buf, "reload") == 0) {
@@ -78,7 +97,7 @@ int32 parse_console(const char* buf){
 		ShowInfo("ai-server: reload chat=%s skill_db=%s profile=%s\n",
 			ok_chat ? "OK" : "FAIL", ok_sk ? "OK" : "FAIL", ok_pr ? "OK" : "FAIL");
 	} else {
-		ShowInfo("Console commands: status | stats | list | alive | alloc <N> | reload | shutdown\n");
+		ShowInfo("Console commands: status | stats | list | alive | alloc <N> | reload | hire <aid> <map> <x> <y> [job tier dur_ms] | shutdown\n");
 	}
 	return 0;
 }
@@ -156,6 +175,10 @@ bool AIServer::initialize(int32 argc, char* argv[]){
 		return false;
 	}
 
+	// Phase 6 — needed by aichrif_follow_timer to resolve mapindex IDs
+	// from REPORT into names for the WARP packet (cross-map merc follow).
+	mapindex_init();
+
 	do_init_shell_pool();
 	do_init_names();
 
@@ -203,6 +226,7 @@ void AIServer::handle_main(t_tick next){
 void AIServer::finalize(){
 	do_final_aichrif();
 	do_final_shell_pool();
+	mapindex_final();
 	ShowStatus("ai-server: finalized.\n");
 }
 

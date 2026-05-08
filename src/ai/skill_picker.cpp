@@ -44,6 +44,19 @@ const std::unordered_map<std::string, uint32> g_status_bit = {
 	{ "autoguard",  AI_ST_AUTOGUARD },
 	{ "increase_agi", AI_ST_INC_AGI },
 	{ "inc_agi",    AI_ST_INC_AGI },
+	// Phase 6 — Priest/AB buff line for NOT_OWNER_STATUS refresh checks.
+	{ "blessing",   AI_ST_BLESSING },
+	{ "kyrie",      AI_ST_KYRIE },
+	{ "magnificat", AI_ST_MAGNIFICAT },
+	{ "assumptio",  AI_ST_ASSUMPTIO },
+	{ "angelus",    AI_ST_ANGELUS },
+	{ "impositio",  AI_ST_IMPOSITIO },
+	{ "gloria",     AI_ST_GLORIA },
+	{ "expiatio",   AI_ST_EXPIATIO },
+	{ "secrament",  AI_ST_SECRAMENT },
+	{ "sacrament",  AI_ST_SECRAMENT },	// alias for the typo-friendly form
+	{ "offertorium", AI_ST_OFFERTORIUM },
+	{ "renovatio",   AI_ST_RENOVATIO },
 };
 
 /// Phase 5 — known passive skills. The map-server's CAST handler drops
@@ -110,13 +123,19 @@ const std::unordered_set<uint16> g_caster_jobs = {
 	4014, // High Priest
 	// 3rd classes
 	4047, // Warlock
-	4049, // Arch Bishop
+	4063, // Arch Bishop
 	4053, // Sorcerer
 };
 
 static uint32 status_name_to_bit(const std::string& name){
 	std::string lc = name;
 	for (char& c : lc) c = (char)((c >= 'A' && c <= 'Z') ? c + 32 : c);
+	// Accept both "BLESSING" and rA-style "SC_BLESSING" — strip the prefix
+	// so YAML written either way maps to the same bit.
+	if (lc.size() > 3 && lc[0] == 's' && lc[1] == 'c' && lc[2] == '_')
+		lc.erase(0, 3);
+	// "SC_INCREASEAGI" → after strip "increaseagi"; alias to "increase_agi".
+	if (lc == "increaseagi") lc = "increase_agi";
 	auto it = g_status_bit.find(lc);
 	return (it == g_status_bit.end()) ? 0u : it->second;
 }
@@ -152,6 +171,12 @@ const std::unordered_map<std::string, skill_cond> g_cond_table = {
 	{ "ally_count_nearby",    skill_cond::ALLY_COUNT_NEARBY },
 	{ "enemy_is_boss",        skill_cond::ENEMY_IS_BOSS },
 	{ "sp_above",             skill_cond::SP_ABOVE },
+	// Phase 6 — mercenary support gates
+	{ "owner_hp_below",       skill_cond::OWNER_HP_BELOW },
+	{ "owner_hp_above",       skill_cond::OWNER_HP_ABOVE },
+	{ "owner_sp_below",       skill_cond::OWNER_SP_BELOW },
+	{ "owner_status",         skill_cond::OWNER_STATUS },
+	{ "not_owner_status",     skill_cond::NOT_OWNER_STATUS },
 };
 
 std::string read_str(const ryml::NodeRef& node, const char* key,
@@ -243,6 +268,7 @@ bool skill_picker_load(const char* yaml_path){
 			e.rate  = (uint16)read_int(sk, "Rate", 10000);
 			e.state  = (skill_state)read_int(sk, "State", 0);
 			e.target = (skill_target)read_int(sk, "Target", 0);
+			e.cooldown_ms = (uint32)read_int(sk, "Cooldown", 0);
 
 			std::string cond = read_str(sk, "Condition", "");
 			e.condition = skill_picker_parse_cond(cond);
@@ -281,6 +307,12 @@ const skill_rotation* skill_picker_get(uint16 job){
 /// gate passes. Status-name conditions (enemy_status/self_status/ally_status)
 /// always pass for now — Phase 2 doesn't carry SC info in REPORT yet, so
 /// they're treated as no-op satisfied; refine in Phase 3.
+static bool cond_passes(const skill_entry& e, const shell_ctx& ctx);
+
+bool skill_picker_cond_passes(const skill_entry& e, const shell_ctx& ctx){
+	return cond_passes(e, ctx);
+}
+
 static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
 	auto pct = [](uint32 cur, uint32 max) -> int32 {
 		if (max == 0) return 0;
@@ -338,6 +370,25 @@ static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
 			if (!ctx.has_target) return false;
 			if (e.cond_value_num == 1) return ctx.target_is_mvp;
 			return ctx.target_is_boss;
+		// Phase 6 — mercenary owner gates. Fail closed when no owner online.
+		case skill_cond::OWNER_HP_BELOW:
+			return ctx.owner_present && (int32)ctx.owner_hp_pct < e.cond_value_num;
+		case skill_cond::OWNER_HP_ABOVE:
+			return ctx.owner_present && (int32)ctx.owner_hp_pct > e.cond_value_num;
+		case skill_cond::OWNER_SP_BELOW:
+			return ctx.owner_present && (int32)ctx.owner_sp_pct < e.cond_value_num;
+		case skill_cond::OWNER_STATUS: {
+			if (!ctx.owner_present) return false;
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return false;
+			return (ctx.owner_statuses & bit) != 0;
+		}
+		case skill_cond::NOT_OWNER_STATUS: {
+			if (!ctx.owner_present) return false; // can't refresh a buff on offline owner
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return false;
+			return (ctx.owner_statuses & bit) == 0;
+		}
 		// Phase 3 stubs (ally tracking + caster-only state not in REPORT yet).
 		case skill_cond::ALLY_STATUS:
 		case skill_cond::NOT_ALLY_STATUS:
@@ -355,7 +406,9 @@ static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
 }
 
 const skill_entry* skill_picker_choose(const skill_rotation& rot,
-		const shell_ctx& ctx, size_t* cursor){
+		const shell_ctx& ctx, size_t* cursor,
+		const std::unordered_map<std::string, t_tick>* cooldowns,
+		t_tick now){
 	if (rot.skills.empty()) return nullptr;
 	size_t n = rot.skills.size();
 	size_t start = (cursor != nullptr) ? (*cursor % n) : 0;
@@ -367,6 +420,12 @@ const skill_entry* skill_picker_choose(const skill_rotation& rot,
 		if (e.state == skill_state::HAS_TARGET && !ctx.has_target) continue;
 		if (e.state == skill_state::NO_TARGET  &&  ctx.has_target) continue;
 		if (!cond_passes(e, ctx)) continue;
+		// Phase 6 — per-skill cooldown gate (mercenary support tick).
+		if (cooldowns != nullptr) {
+			auto cit = cooldowns->find(e.skill_name);
+			if (cit != cooldowns->end() && DIFF_TICK(cit->second, now) > 0)
+				continue;
+		}
 		// Per-10000 rate roll.
 		if (e.rate < 10000 && (int32)(rnd() % 10000) >= e.rate) continue;
 		if (cursor != nullptr) *cursor = (idx + 1) % n;

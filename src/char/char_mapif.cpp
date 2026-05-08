@@ -1446,10 +1446,13 @@ int32 chmapif_parse(int32 fd){
 			case 0x2b2d: next=chmapif_bonus_script_get(fd); break; //Load data
 			case 0x2b2e: next=chmapif_bonus_script_save(fd); break;//Save data
 			// AI peer feedback (map -> char -> ai). Length-prefixed at offset 2.
+			case 0x2b44: // AI_HIRE_REQUEST (Phase 6)
+			case 0x2b45: // AI_DISMISS_REQUEST (Phase 6)
 			case 0x2b50: // AI_SHELL_SPAWNED
 			case 0x2b51: // AI_SHELL_REPORT
 			case 0x2b52: // AI_SHELL_EVENT
 			case 0x2b53: // AI_PONG
+			case 0x2b54: // AI_OWNER_BACK (Phase 6)
 			{
 				if (RFIFOREST(fd) < 4) return 0;
 				int32 plen = RFIFOW(fd, 2);

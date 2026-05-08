@@ -60,6 +60,8 @@ struct ai_shell_init {
 	uint16 str_, agi_, vit_, int_, dex_, luk_;
 	uint16 speed;
 	uint32 equip[10]; // see ai_equip_slot
+	uint32 owner_aid; // Phase 6 — 0 = autonomous, otherwise BL_PC account id
+	uint32 owner_cid; // Phase 6 — 0 = autonomous, otherwise BL_PC char_id (persistent identity)
 };
 int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
 
@@ -67,6 +69,17 @@ int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
 /// gone). Used during scheduled respawn (followed by a fresh SPAWN with the
 /// same shell_id) and during shutdown wipes.
 int32 aichrif_send_despawn(int32 fd, uint32 shell_id, uint8 reason);
+
+/// Phase 6 — hire a mercenary shell of `job` for player `owner_aid`,
+/// spawning at (map_name, x, y). duration_ms = 0 for no expiry. Returns
+/// the new shell_id, or 0 on failure (no profile, pool empty, etc.).
+///
+/// base_level_override / job_level_override default to 0 = "use the
+/// profile values". Set non-zero to scale a Priest-line merc up to the
+/// party leader's level (e.g. lvl-175 AB instead of fixed T2 lvl 130).
+uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
+		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
+		uint16 base_level_override = 0, uint16 job_level_override = 0);
 
 /// Tell the map-server to walk a shell to (x, y).
 int32 aichrif_send_walk_to(int32 fd, uint32 shell_id, uint16 x, uint16 y);
@@ -115,9 +128,12 @@ constexpr uint16 PACKET_AI_SHELL_SPAWN   = 0x2b40;
 constexpr uint16 PACKET_AI_SHELL_DESPAWN = 0x2b41;
 constexpr uint16 PACKET_AI_SHELL_CMD     = 0x2b42;
 constexpr uint16 PACKET_AI_PING          = 0x2b43;
+constexpr uint16 PACKET_AI_HIRE_REQUEST    = 0x2b44;	// Phase 6 (map -> char -> ai)
+constexpr uint16 PACKET_AI_DISMISS_REQUEST = 0x2b45;	// Phase 6 (map -> char -> ai)
 constexpr uint16 PACKET_AI_SHELL_SPAWNED = 0x2b50;
 constexpr uint16 PACKET_AI_SHELL_REPORT  = 0x2b51;
 constexpr uint16 PACKET_AI_SHELL_EVENT   = 0x2b52;
 constexpr uint16 PACKET_AI_PONG          = 0x2b53;
+constexpr uint16 PACKET_AI_OWNER_BACK    = 0x2b54;	// Phase 6 (map -> char -> ai)
 
 #endif /* AI_CHRIF_HPP */

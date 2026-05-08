@@ -23,6 +23,7 @@
 #include <common/utils.hpp>
 
 #include "achievement.hpp"
+#include "aichrif.hpp"
 #include "battle.hpp"
 #include "buyingstore.hpp"
 #include "channel.hpp"
@@ -11466,6 +11467,61 @@ ACMD_FUNC(macrochecker){
 
 #include <custom/atcommand.inc>
 
+/// Phase 6 — `@hire <job> [tier] [duration_min]`. Sends a HIRE_REQUEST to
+/// ai-server (via char-server). The merc spawns at the player's current map
+/// + cell and follows them until despawn. Defaults: job=Priest(8) tier=2
+/// duration_min=10. Use 0 minutes for "no expiry" (still despawns on logout).
+ACMD_FUNC(hire){
+	// Phase 6 — mercenary hiring requires being in a party. The merc joins
+	// the party so its UI/HP bar shows up, and so party-only mechanics
+	// (e.g., heal targeting via party) work consistently.
+	if (sd->status.party_id == 0) {
+		clif_displaymessage(fd, "@hire: voce precisa estar em uma party.");
+		return -1;
+	}
+	int32 job = 8;
+	int32 tier = 2;
+	int32 dur_min = 10;
+	int32 blvl_override = 0;
+	int32 jlvl_override = 0;
+	if (*message != '\0') {
+		// Permissive parse: accepts 1..5 ints (job, tier, duration, blvl, jlvl).
+		int32 n = sscanf(message, "%d %d %d %d %d", &job, &tier, &dur_min, &blvl_override, &jlvl_override);
+		if (n < 1) {
+			clif_displaymessage(fd, "Usage: @hire <job_id> [tier 0..2] [duration_min] [base_lvl] [job_lvl]");
+			return -1;
+		}
+	}
+	if (tier < 0 || tier > 2) tier = 2;
+	if (dur_min < 0) dur_min = 0;
+	uint32 dur_ms = (uint32)dur_min * 60u * 1000u;
+	int32 r = aichrif_send_hire((uint32)sd->status.account_id, (uint32)sd->status.char_id,
+		(uint16)job, (uint8)tier,
+		mapindex_id2name(sd->mapindex), (uint16)sd->x, (uint16)sd->y, dur_ms,
+		(uint16)blvl_override, (uint16)jlvl_override);
+	if (r != 0) {
+		clif_displaymessage(fd, "@hire: ai-server is offline.");
+		return -1;
+	}
+	char msg[120];
+	safesnprintf(msg, sizeof(msg), "@hire: requested merc job=%d tier=%d dur=%dmin.", job, tier, dur_min);
+	clif_displaymessage(fd, msg);
+	return 0;
+}
+
+/// Phase 6 — `@dismiss`. Tears down the player's mercenary shell early.
+/// ai-server is the source of truth for owner→shell mapping; this just
+/// forwards the request.
+ACMD_FUNC(dismiss){
+	int32 r = aichrif_send_dismiss((uint32)sd->status.char_id);
+	if (r != 0) {
+		clif_displaymessage(fd, "@dismiss: ai-server is offline.");
+		return -1;
+	}
+	clif_displaymessage(fd, "@dismiss: requested.");
+	return 0;
+}
+
 /**
  * Fills the reference of available commands in atcommand DBMap
  **/
@@ -11583,6 +11639,8 @@ void atcommand_basecommands(void) {
 		ACMD_DEF(broadcast), // + /b and /nb
 		ACMD_DEF(localbroadcast), // + /lb and /nlb
 		ACMD_DEF(recallall),
+		ACMD_DEF(hire),
+		ACMD_DEF(dismiss),
 		ACMD_DEFR(reload,ATCMD_NOSCRIPT),
 		ACMD_DEF(reloaditemdb),
 		ACMD_DEF(reloadcashdb),

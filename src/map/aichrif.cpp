@@ -21,6 +21,7 @@
 
 #include "battle.hpp"
 #include "chrif.hpp"
+#include "party.hpp"
 #include "clif.hpp"
 #include <common/mapindex.hpp>
 
@@ -40,6 +41,33 @@ std::unordered_map<uint32, map_session_data*> g_shells;
 /// Per-shell hp tracking so the REPORT timer can synthesise ATTACKED_BY
 /// events without hooking status_damage (status.cpp is off-limits).
 std::unordered_map<uint32, uint32> g_last_hp;
+/// Phase 6 — owner_aid per hired-mercenary shell. 0 / absent = autonomous
+/// (population spawner). Looked up at REPORT time to fill owner_* fields,
+/// and used to emit AI_EVT_OWNER_GONE when the owner logs out.
+std::unordered_map<uint32, uint32> g_owner_aid;
+/// Phase 6 — owner char_id per hired-mercenary shell. The merc is bound
+/// to a specific character — switching to a different char on the same
+/// account does NOT count as the owner being present. We verify cid on
+/// every REPORT and on the relogin poll.
+std::unordered_map<uint32, uint32> g_owner_cid;
+/// Whether each owned shell has seen its owner online at least once. Used
+/// to defer AI_EVT_OWNER_GONE until after the first sighting (otherwise
+/// shells spawn just-before the owner zones in and immediately get nuked).
+std::unordered_map<uint32, bool> g_owner_seen_once;
+/// Phase 6 — gettick() of last successful map_id2sd lookup per shell.
+/// We treat the owner as "gone" only after the lookup has failed for
+/// >= AI_OWNER_GONE_GRACE_MS, which lets the player zone between maps
+/// without nuking the merc.
+std::unordered_map<uint32, t_tick> g_owner_last_seen_tick;
+constexpr t_tick AI_OWNER_GONE_GRACE_MS = 8000;
+
+/// Phase 6 — shells whose owner went offline. Map-server has already
+/// despawned the shell unit; we keep the owner identity so the relogin
+/// poll can fire AI_EVT_OWNER_BACK once the right character reconnects,
+/// and ai-server re-spawns the merc next to them.
+struct suspended_owner_t { uint32 aid; uint32 cid; };
+std::unordered_map<uint32, suspended_owner_t> g_suspended_owner;
+constexpr t_tick AI_OWNER_BACK_POLL_MS = 1000;
 }
 
 bool aishell_is_shell(uint32 account_id){
@@ -52,6 +80,41 @@ map_session_data* aishell_find(uint32 shell_id){
 }
 
 /// Reply to ai-server with PACKET_AI_PONG. Length-prefixed (8 bytes).
+int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 tier,
+		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
+		uint16 base_level_override, uint16 job_level_override){
+	if (char_fd < 0 || session[char_fd] == nullptr) return -1;
+	PACKET_AI_HIRE_REQUEST_S p{};
+	p.cmd = PACKET_AI_HIRE_REQUEST;
+	p.len = sizeof(p);
+	p.owner_aid = owner_aid;
+	p.owner_cid = owner_cid;
+	p.job = job;
+	p.tier = tier;
+	safestrncpy(p.map_name, map_name, MAP_NAME_LENGTH_EXT);
+	p.x = x;
+	p.y = y;
+	p.duration_ms = duration_ms;
+	p.base_level_override = base_level_override;
+	p.job_level_override  = job_level_override;
+	WFIFOHEAD(char_fd, sizeof(p));
+	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
+	WFIFOSET(char_fd, sizeof(p));
+	return 0;
+}
+
+int32 aichrif_send_dismiss(uint32 owner_cid){
+	if (char_fd < 0 || session[char_fd] == nullptr) return -1;
+	PACKET_AI_DISMISS_REQUEST_S p{};
+	p.cmd = PACKET_AI_DISMISS_REQUEST;
+	p.len = sizeof(p);
+	p.owner_cid = owner_cid;
+	WFIFOHEAD(char_fd, sizeof(p));
+	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
+	WFIFOSET(char_fd, sizeof(p));
+	return 0;
+}
+
 static void aichrif_send_pong(int32 fd, uint32 token){
 	WFIFOHEAD(fd, 8);
 	WFIFOW(fd, 0) = PACKET_AI_PONG;
@@ -154,9 +217,13 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	// Phase 3.13: nudge to a walkable cell. If the freecell search fails
 	// (e.g. requested cell is way out of map bounds), drop the spawn —
 	// otherwise map_addblock crashes the server with out-of-bounds coords.
+	// Phase 6 — hired mercs use a tight 4-cell radius so they spawn next
+	// to the player who hired them; autonomous shells take the wider
+	// 100-cell sweep since they're seeded on randomly-picked cells.
 	{
 		int16 sx = sd->x, sy = sd->y;
-		if (map_search_freecell(nullptr, m, &sx, &sy, 100, 100, 1)) {
+		int16 range = (p->owner_aid != 0) ? 4 : 100;
+		if (map_search_freecell(nullptr, m, &sx, &sy, range, range, 1)) {
 			sd->x = sx;
 			sd->y = sy;
 		} else {
@@ -308,6 +375,11 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	clif_changelook(sd, LOOK_WEAPON, sd->status.weapon);
 
 	g_shells[p->shell_id] = sd;
+	if (p->owner_aid != 0) {
+		g_owner_aid[p->shell_id] = p->owner_aid;
+		g_owner_cid[p->shell_id] = p->owner_cid;
+		g_owner_seen_once[p->shell_id] = false;
+	}
 	ShowStatus("ai-server: shell %u '%s' (class=%u) spawned at %s(%d,%d) lv=%u/%u weapon=%u/equip[HAND_R]=%u.\n",
 		p->shell_id, p->name, p->class_, p->map_name, p->x, p->y,
 		p->base_level, p->job_level, sd->status.weapon, p->equip[0]);
@@ -320,6 +392,20 @@ void aishell_destroy(uint32 shell_id){
 	map_session_data* sd = it->second;
 	g_shells.erase(it);
 	g_last_hp.erase(shell_id);
+	g_owner_aid.erase(shell_id);
+	g_owner_cid.erase(shell_id);
+	g_owner_seen_once.erase(shell_id);
+	g_owner_last_seen_tick.erase(shell_id);
+	// NOTE: g_suspended_owner is intentionally NOT erased here. When
+	// OWNER_GONE fires we move the owner identity into g_suspended_owner
+	// and ai-server immediately sends DESPAWN — which calls this function.
+	// Erasing here would wipe the suspension entry before the relogin
+	// poll ever runs. The entry is consumed when the right char logs back
+	// in (poll erases it after sending OWNER_BACK).
+
+	// Phase 6 — pull the merc out of its party before tearing down sd.
+	if (sd->status.party_id != 0)
+		party_remove_aishell(sd->status.party_id, sd->status.account_id);
 
 	clif_clearunit_area(*sd, CLR_OUTSIGHT);
 	map_delblock(sd);
@@ -367,6 +453,18 @@ static uint32 ai_collect_statuses(block_list* bl){
 	if (sc->getSCE(SC_PROVOKE))    m |= AI_ST_PROVOKE;
 	if (sc->getSCE(SC_AUTOGUARD))  m |= AI_ST_AUTOGUARD;
 	if (sc->getSCE(SC_INCREASEAGI)) m |= AI_ST_INC_AGI;
+	// Phase 6 — Priest/AB buff line for mercenary refresh logic.
+	if (sc->getSCE(SC_BLESSING))   m |= AI_ST_BLESSING;
+	if (sc->getSCE(SC_KYRIE))      m |= AI_ST_KYRIE;
+	if (sc->getSCE(SC_MAGNIFICAT)) m |= AI_ST_MAGNIFICAT;
+	if (sc->getSCE(SC_ASSUMPTIO))  m |= AI_ST_ASSUMPTIO;
+	if (sc->getSCE(SC_ANGELUS))    m |= AI_ST_ANGELUS;
+	if (sc->getSCE(SC_IMPOSITIO))  m |= AI_ST_IMPOSITIO;
+	if (sc->getSCE(SC_GLORIA))     m |= AI_ST_GLORIA;
+	if (sc->getSCE(SC_EXPIATIO))   m |= AI_ST_EXPIATIO;
+	if (sc->getSCE(SC_SECRAMENT))  m |= AI_ST_SECRAMENT;
+	if (sc->getSCE(SC_OFFERTORIUM)) m |= AI_ST_OFFERTORIUM;
+	if (sc->getSCE(SC_RENOVATIO))  m |= AI_ST_RENOVATIO;
 	return m;
 }
 
@@ -485,6 +583,81 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 	for (uint8 i = 0; i < ctx.count; i++)
 		p.enemies[i] = ctx.rows[i];
 
+	// Phase 6 — owner snapshot for hired-mercenary shells. owner_present=0
+	// when no owner OR owner offline; ai-server treats both as "no follow".
+	auto oit = g_owner_aid.find(shell_id);
+	if (oit != g_owner_aid.end()) {
+		map_session_data* osd = map_id2sd((int32)oit->second);
+		// Phase 6 — verify the merc is bound to THIS specific character
+		// (not just the same account on a different char). If a different
+		// char of the same account is online, treat the owner as gone.
+		uint32 expected_cid = 0;
+		auto cit = g_owner_cid.find(shell_id);
+		if (cit != g_owner_cid.end()) expected_cid = cit->second;
+		if (osd != nullptr && expected_cid != 0
+		    && (uint32)osd->status.char_id != expected_cid) {
+			osd = nullptr;	// wrong character on this account
+		}
+		if (osd != nullptr) {
+			p.owner_present = 1;
+			p.owner_mapindex = (uint16)osd->mapindex;
+			p.owner_x = (uint16)osd->x;
+			p.owner_y = (uint16)osd->y;
+			uint32 ohp_max = osd->battle_status.max_hp ? osd->battle_status.max_hp : 1;
+			uint32 osp_max = osd->battle_status.max_sp ? osd->battle_status.max_sp : 1;
+			p.owner_hp_pct = (uint16)((osd->battle_status.hp * 100) / ohp_max);
+			p.owner_sp_pct = (uint16)((osd->battle_status.sp * 100) / osp_max);
+			p.owner_statuses = ai_collect_statuses(osd);
+			p.owner_target_id = (uint32)osd->ud.target;	// 0 if not engaging
+			g_owner_seen_once[shell_id] = true;
+			g_owner_last_seen_tick[shell_id] = gettick();
+		} else if (g_owner_seen_once[shell_id]) {
+			// Owner not online RIGHT NOW (or different char on same account).
+			// Could be a brief zone transition (NPC warp, @warp, login limbo)
+			// or a real disconnect / char switch. Wait AI_OWNER_GONE_GRACE_MS
+			// before firing OWNER_GONE so the merc survives map changes.
+			// After the grace expires we move the owner identity to
+			// g_suspended_owner so the relogin poll can fire AI_EVT_OWNER_BACK
+			// when the right character reconnects.
+			t_tick last_seen = g_owner_last_seen_tick[shell_id];
+			if (last_seen != 0 && DIFF_TICK(gettick(), last_seen) >= AI_OWNER_GONE_GRACE_MS) {
+				suspended_owner_t so{};
+				so.aid = oit->second;
+				so.cid = expected_cid;
+				aichrif_send_event(shell_id, AI_EVT_OWNER_GONE, so.aid, 0);
+				g_owner_aid.erase(shell_id);
+				g_owner_cid.erase(shell_id);
+				g_owner_seen_once.erase(shell_id);
+				g_owner_last_seen_tick.erase(shell_id);
+				g_suspended_owner[shell_id] = so;
+			}
+		}
+	}
+
+	// Phase 6 — fill the party roster (excluding the merc itself) so the
+	// support tick can iterate buff/heal targets across the whole party.
+	if (sd->status.party_id != 0) {
+		struct party_data* pd = party_search(sd->status.party_id);
+		if (pd != nullptr) {
+			uint8 idx = 0;
+			for (int i = 0; i < MAX_PARTY && idx < AI_REPORT_MAX_PARTY; i++) {
+				map_session_data* msd = pd->data[i].sd;
+				if (msd == nullptr) continue;
+				if (msd->status.account_id == sd->status.account_id) continue;	// skip self
+				if (aishell_is_shell((uint32)msd->status.account_id)) continue;	// skip other shells
+				PACKET_AI_PARTY_MEMBER& m = p.party_members[idx];
+				m.account_id = (uint32)msd->status.account_id;
+				uint32 mhp_max = msd->battle_status.max_hp ? msd->battle_status.max_hp : 1;
+				uint32 msp_max = msd->battle_status.max_sp ? msd->battle_status.max_sp : 1;
+				m.hp_pct = (uint16)((msd->battle_status.hp * 100) / mhp_max);
+				m.sp_pct = (uint16)((msd->battle_status.sp * 100) / msp_max);
+				m.statuses = ai_collect_statuses(msd);
+				idx++;
+			}
+			p.party_count = idx;
+		}
+	}
+
 	WFIFOHEAD(char_fd, sizeof(p));
 	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
 	WFIFOSET(char_fd, sizeof(p));
@@ -506,6 +679,13 @@ static int32 aichrif_handle_spawn(int32 fd){
 		return 0;
 	const PACKET_AI_SHELL_SPAWN_S* p = (const PACKET_AI_SHELL_SPAWN_S*)RFIFOP(fd, 0);
 	map_session_data* sd = aishell_create(p);
+	// Phase 6 — auto-join the owner's party so the merc shows up in the
+	// party UI (heal targets work via account_id either way).
+	if (sd != nullptr && p->owner_aid != 0) {
+		map_session_data* osd = map_id2sd((int32)p->owner_aid);
+		if (osd != nullptr && osd->status.party_id != 0)
+			party_add_aishell(*sd, osd->status.party_id);
+	}
 	aichrif_send_spawned_ack(p->shell_id, sd != nullptr, sd != nullptr ? 0 : 1);
 	return 1;
 }
@@ -599,9 +779,14 @@ static int32 aichrif_handle_cmd(int32 fd){
 			char nm[sizeof(w->map_name) + 1] = {0};
 			memcpy(nm, w->map_name, sizeof(w->map_name));
 			int16 m = map_mapname2mapid(nm);
+			ShowStatus("aichrif: WARP shell %u to '%s' (m=%d) %u,%u\n",
+				hdr->shell_id, nm, (int32)m, w->x, w->y);
 			if (m < 0) break;
 			int16 dx = (int16)w->x, dy = (int16)w->y;
-			if (!map_search_freecell(nullptr, m, &dx, &dy, 50, 50, 1)) {
+			// Tight radius — the warp packet already targets a cell next
+			// to the owner. A wide search nudges the merc 30+ cells away,
+			// out of viewport. 4 cells is enough to avoid walls/portals.
+			if (!map_search_freecell(nullptr, m, &dx, &dy, 4, 4, 1)) {
 				dx = (int16)w->x; dy = (int16)w->y;
 			}
 			// pc_setpos triggers char-server save which crashes for shells
@@ -620,6 +805,8 @@ static int32 aichrif_handle_cmd(int32 fd){
 				break;
 			}
 			clif_spawn(sd);
+			ShowStatus("aichrif: WARP shell %u DONE on %s(%d,%d)\n",
+				hdr->shell_id, nm, dx, dy);
 			break;
 		}
 		case AI_CMD_SAY: {
@@ -699,11 +886,55 @@ int32 aichrif_try_handle(int32 fd){
 	return ok;
 }
 
+/// Phase 6 — poll suspended owners. When the right character reconnects
+/// (account_id online AND char_id matches) we send PACKET_AI_OWNER_BACK
+/// so ai-server re-spawns the merc next to them. Cheap: usually empty;
+/// at most one entry per offline merc owner.
+static TIMER_FUNC(aichrif_owner_back_timer){
+	if (g_suspended_owner.empty()) return 0;
+	if (char_fd < 0 || session[char_fd] == nullptr) return 0;
+	std::vector<uint32> resolved;
+	resolved.reserve(g_suspended_owner.size());
+	for (auto& kv : g_suspended_owner) {
+		uint32 shell_id = kv.first;
+		uint32 owner_aid = kv.second.aid;
+		uint32 owner_cid = kv.second.cid;
+		map_session_data* osd = map_id2sd((int32)owner_aid);
+		if (osd == nullptr) continue;
+		// Verify the right character is online (different char on same
+		// account does NOT bring the merc back).
+		if (owner_cid != 0 && (uint32)osd->status.char_id != owner_cid)
+			continue;
+		const char* mname = mapindex_id2name(osd->mapindex);
+		if (mname == nullptr || mname[0] == '\0') continue;
+		PACKET_AI_OWNER_BACK_S p{};
+		p.cmd = PACKET_AI_OWNER_BACK;
+		p.len = sizeof(p);
+		p.shell_id = shell_id;
+		p.owner_aid = owner_aid;
+		p.owner_cid = owner_cid;
+		safestrncpy(p.map_name, mname, MAP_NAME_LENGTH_EXT);
+		p.x = (uint16)osd->x;
+		p.y = (uint16)osd->y;
+		WFIFOHEAD(char_fd, sizeof(p));
+		memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
+		WFIFOSET(char_fd, sizeof(p));
+		ShowStatus("aichrif: OWNER_BACK shell %u char %u (aid %u) at %s(%u,%u)\n",
+			shell_id, owner_cid, owner_aid, mname, p.x, p.y);
+		resolved.push_back(shell_id);
+	}
+	for (uint32 sid : resolved) g_suspended_owner.erase(sid);
+	return 0;
+}
+
 void do_init_map_aichrif(void){
 	g_shells.reserve(8192);
 	add_timer_func_list(aichrif_report_timer, "aichrif_report");
 	add_timer_interval(gettick() + AI_REPORT_PERIOD_MS, aichrif_report_timer,
 		0, 0, AI_REPORT_PERIOD_MS);
+	add_timer_func_list(aichrif_owner_back_timer, "aichrif_owner_back");
+	add_timer_interval(gettick() + AI_OWNER_BACK_POLL_MS, aichrif_owner_back_timer,
+		0, 0, AI_OWNER_BACK_POLL_MS);
 }
 
 void do_final_map_aichrif(void){
