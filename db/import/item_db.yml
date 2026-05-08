@@ -171,6 +171,7 @@ Body:
       getitem Booster_B_M_2,3;
       getitem Booster_Coin,82;
       getitem World_Tour_Ticket,20;
+      getitem Booster_W_Up_3,1;
       if (!$@ep17_1_lock) {
           getitem Booster_Pack_180,1;
       }
