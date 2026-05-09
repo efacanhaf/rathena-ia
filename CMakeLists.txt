@@ -530,6 +530,7 @@ if (WIN32)
 		"${CMAKE_CURRENT_SOURCE_DIR}/libmysql.dll"
 		"${CMAKE_CURRENT_SOURCE_DIR}/pcre3.dll"
 		"${CMAKE_CURRENT_SOURCE_DIR}/zlib1.dll"
+		"${CMAKE_CURRENT_SOURCE_DIR}/tools/aiserv.bat"
 		"${CMAKE_CURRENT_SOURCE_DIR}/tools/charserv.bat"
 		"${CMAKE_CURRENT_SOURCE_DIR}/tools/logserv.bat"
 		"${CMAKE_CURRENT_SOURCE_DIR}/tools/mapserv.bat"
