@@ -1,19 +1,24 @@
 //===== DimensionsRO ==========================================
-//= Economy Hooks — daily Cash bonus + MVP Nyan counter.
+//= Economy Hooks — daily Cash bonus.
 //===== Description: ==========================================
-//= Hooks que rodam automaticamente em eventos de player:
-//=
 //= 1. OnPCLoginEvent: +2 Cash no primeiro login do dia.
 //=    Storage: #DRO_DAILY_CASH_LAST$ (key "AAAA-DDD" do dia do ano).
 //=    Account-scoped — soh um char por conta ganha por dia, simulado
 //=    pelo fato de #CASHPOINTS ser conta-wide.
 //=
-//= 2. OnNPCKillEvent: +1 Nyangvine a cada 100 MVPs killed.
-//=    Storage: #DRO_MVP_KILLS (account-scoped contador).
-//=    Deterministico — a 100a kill de MVP da conta ganha 1 Nyan.
-//=    Multi-char na mesma conta compartilha o contador (ok).
+//= O contador de MVP -> Nyangvine (100 kills = 1 Nyan) ESTAVA aqui
+//= como OnNPCKillEvent, mas migrou pra um hook C++ direto em
+//= mob_dead (src/map/mob.cpp). Motivo: a maioria das linhas de
+//= boss_monster do rAthena (.../re/mobs/dungeons/*.txt) terminam em
+//= ",1" — o parser interpreta esse "1" como label de evento, e o
+//= mob fica com npc_event="1". A doc do rAthena confirma:
+//= "OnNPCKillEvent triggers when a player kills a monster *without
+//= label*", entao o global event NUNCA disparava pros MVPs reais.
+//= O hook C++ checa md->get_bosstype() == BOSSTYPE_MVP em mob_dead
+//= antes do dispatch de label, dispensando o script trigger.
 //=
-//= Nao consome zeny, nao da P2W boost, nao escala com cash.
+//= Account reg #DRO_MVP_KILLS continua o mesmo nome — qualquer
+//= valor existente persiste; so a fonte do incremento mudou.
 //============================================================
 
 -	script	dro_economy_hooks	-1,{
@@ -26,17 +31,6 @@ OnPCLoginEvent:
 		#CASHPOINTS += 2;
 		#DRO_DAILY_CASH_LAST$ = .@today$;
 		dispbottom "[DimensionsRO] +2 Cash de bonus diario. Saldo: " + (#CASHPOINTS) + " Cash.";
-	}
-	end;
-
-OnNPCKillEvent:
-	// Soh conta MVPs (mobs com MVP exp > 0).
-	if (getmonsterinfo(killedrid, MOB_MVPEXP) <= 0) end;
-
-	#DRO_MVP_KILLS += 1;
-	if (#DRO_MVP_KILLS % 100 == 0) {
-		getitem 6909, 1;
-		dispbottom "[DimensionsRO] " + (#DRO_MVP_KILLS) + " MVPs derrotados! +1 Nyangvine.";
 	}
 	end;
 }

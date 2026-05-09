@@ -3598,6 +3598,29 @@ int32 mob_dead(mob_data *md, block_list *src, int32 type)
 				mercenary_kills(sd->md);
 		}
 
+		// DimensionsRO — 1 Nyangvine por MVP killed.
+		// Bypassa o flow do OnNPCKillEvent porque a maioria das linhas de
+		// boss_monster do rAthena terminam em ",1" (mob.cpp:5243 sscanf
+		// trata isso como `eventname` -> npc_event="1" -> rota da explicit
+		// label tenta um event que nao existe e silencia o global hook).
+		// Ler doc/script_commands.txt: "OnNPCKillEvent triggers when a
+		// player kills a monster *without label*". Hooka aqui antes do
+		// dispatch pra capturar 100% dos MVPs independente de label.
+		// Account reg #DRO_MVP_KILLS mantido pra historico/leaderboard.
+		if (first_sd != nullptr && !md->state.npc_killmonster &&
+				md->get_bosstype() == BOSSTYPE_MVP) {
+			int32 dro_mvp_key = add_str("#DRO_MVP_KILLS");
+			int64 dro_mvp_count = pc_readaccountreg(first_sd, dro_mvp_key) + 1;
+			pc_setaccountreg(first_sd, dro_mvp_key, dro_mvp_count);
+			struct item it{};
+			it.nameid = 6909;	// Nyangvine
+			it.amount = 1;
+			it.identify = 1;
+			pc_additem(first_sd, &it, 1, LOG_TYPE_SCRIPT);
+			clif_messagecolor(first_sd, color_table[COLOR_LIGHT_GREEN],
+				"[DimensionsRO] +1 Nyangvine pelo MVP.", false, SELF);
+		}
+
 		if( md->npc_event[0] && !md->state.npc_killmonster ) {
 			if( sd && battle_config.mob_npc_event_type ) {
 				pc_setparam(sd, SP_KILLEDGID, md->id);
