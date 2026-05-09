@@ -8,6 +8,17 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-05-09
 
+### Alterado — Recompensa de MVP em Nyangvine
+
+- Cada **MVP derrotado** agora dá **1 Nyangvine** com mensagem de
+  confirmação. Antes: a recompensa era anunciada como "1 a cada 100 MVPs",
+  mas o gatilho nunca disparava nas linhas de spawn oficiais do rAthena
+  (label vazia conflitando com sufixo `,1` de tamanho/AI). Trocado por
+  detecção nativa via tipo de boss; agora funciona para todos os MVPs
+  spawnados normalmente.
+- O contador `#DRO_MVP_KILLS` continua somando por conta (histórico/
+  futuro leaderboard) mas não é mais o gate da recompensa.
+
 ### Adicionado — Old Glast Heim Advanced (Hard Mode)
 
 - Nova instância **Old Glast Heim Advanced** disponível para personagens
