@@ -1,39 +1,98 @@
 //===== DimensionsRO ==========================================
-//= Treinador de Aventureiros (Phase 6 + 6.2)
+//= Treinador de Aventureiros (Phase 6 + 6.2 + persistencia)
 //===== Description: =========================================
-//= NPC para contratar um Aventureiro de suporte (linha
-//= Acolyte/Priest/HP/AB) ou um Aventureiro Tanker (linha
-//= Swordsman/Crusader/Paladin/Royal Guard). Os Aventureiros
-//= sao BL_PCs controlados pelo ai-server.
+//= Hire de Aventureiro Suporte (Acolyte/Priest/HP/AB) ou
+//= Tanker (Sw/Crusader/Paladin/RG). NPC e' o unico ponto de
+//= contato pro player (hire/dispense) — @hire e @dismiss
+//= continuam GM-only.
 //=
-//= - Suporte: cura, buffa, cura status, faz Lex Aeterna no
-//=   alvo do owner (so' suporte, nao ataca).
-//= - Tanker: corre pra brigar, segura aggro com Provoke +
-//=   Devotion, usa Auto Guard / Reflect Shield / Defending
-//=   Aura, prefere o alvo do owner.
+//= Persistencia: cada hire grava uma linha em
+//= `dro_merc_contracts` (char_id PK). Dispense apaga. Permite:
+//=   - char login refund pro-rata se ai-server crashou
+//=   - ai-server startup pode reler contratos e re-spawnar
+//=   - leaderboard / metricas no futuro
 //=
-//= Regras (ambos):
-//=  1) So' o LIDER da party pode contratar.
-//=  2) Classe automatica pelo nivel do lider; nivel do
-//=     Aventureiro = nivel do lider.
-//=  3) Preco escala com o nivel: zeny/min = adv_lvl * 100
-//=     Ex: AB lvl 130 por 60min = 130 * 100 * 60 = 780,000z.
-//=  4) Item Voucher_Adventurer (1270150) = 60min sem zeny.
-//=  5) Soft-dedupe via ADV_HIRED_UNTIL evita comprar dois
-//=     ao mesmo tempo (anti-stack real esta no ai-server).
+//= Orfao: se ADV_HIRED_UNTIL > now mas ai-server perdeu o
+//= merc (crash/restart), o player nao consegue contratar de
+//= novo. NPC detecta via ausencia de linha em
+//= dro_merc_contracts e oferece dispense + refund pro-rata.
 //============================================================
 
 prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	mes "[Treinador de Aventureiros]";
 	mes "Ola, aventureiro. Veio buscar um companheiro de jornada?";
 	mes " ";
+
+	// Already hired? Offer dispense path.
+	if (ADV_HIRED_UNTIL > gettimetick(2)) {
+		.@left = (ADV_HIRED_UNTIL - gettimetick(2)) / 60 + 1;
+		mes "Voce ainda tem um Aventureiro contratado.";
+		mes "Restam ^0000FF" + .@left + " minuto(s)^000000.";
+		next;
+		.@op = select(
+			"Dispensar agora (encerra o contrato)",
+			"Voltar"
+		);
+		if (.@op == 2) close;
+
+		// Pull the contract so we can compute refund pro-rata when the
+		// shell is orphaned (ai-server lost it).
+		.@orphan = 0;
+		.@refund_zeny = 0;
+		.@refund_voucher = 0;
+		query_sql "SELECT paid_zeny, paid_voucher, hired_at, duration_min FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
+			.@paid_zeny, .@paid_voucher, .@hired_at, .@duration_min;
+
+		if (getarraysize(.@paid_zeny) > 0) {
+			// Orphan check: if ai-server has been restarted since hired_at,
+			// the in-memory shell is gone. We track ai-server boot time in
+			// $dro_ai_boot_ts (set by map-server on AI handshake; mapreg).
+			if ($dro_ai_boot_ts > 0 && $dro_ai_boot_ts > .@hired_at[0]) {
+				.@orphan = 1;
+				.@total = .@duration_min[0] * 60;
+				.@elapsed = gettimetick(2) - .@hired_at[0];
+				if (.@elapsed < 0) .@elapsed = 0;
+				.@remaining = .@total - .@elapsed;
+				if (.@remaining < 0) .@remaining = 0;
+				if (.@total > 0) {
+					.@refund_zeny = .@paid_zeny[0] * .@remaining / .@total;
+					.@refund_voucher = (.@paid_voucher[0] && .@remaining > .@total / 2) ? 1 : 0;
+				}
+			}
+		}
+
+		mes "[Treinador de Aventureiros]";
+		if (.@orphan) {
+			mes "Verifico aqui... seu Aventureiro foi perdido por uma falha do servidor.";
+			if (.@refund_zeny > 0) {
+				mes "Devolvo ^0000FF" + .@refund_zeny + "z^000000 (proporcional ao tempo restante).";
+				Zeny += .@refund_zeny;
+			}
+			if (.@refund_voucher) {
+				mes "Devolvo tambem o ^990099Voucher de Aventureiro^000000 (mais da metade do tempo restava).";
+				getitem 1270150, 1;
+			}
+			if (!.@refund_zeny && !.@refund_voucher) {
+				mes "Nao havia tempo restante o suficiente pra reembolsar nada.";
+			}
+		} else {
+			mes "Combinado, vou dispensar o Aventureiro.";
+		}
+
+		// Reset state regardless: contract row + ADV_HIRED_UNTIL + ai-server.
+		query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0);
+		ADV_HIRED_UNTIL = 0;
+		atcommand "@dismiss";
+		mes " ";
+		mes "Pronto. Pode contratar de novo quando quiser.";
+		close;
+	}
+
 	mes "Posso te indicar dois tipos:";
 	mes "- ^990099Aventureiro de Suporte^000000 (cura, buffa, segura barra)";
 	mes "- ^FF0000Aventureiro Tanker^000000 (corre pra frente, segura aggro)";
 	next;
 
-	// Party requirement — o Aventureiro entra na party do owner; sem party
-	// nao ha onde encaixa-lo.
 	if (getcharid(1) == 0) {
 		mes "[Treinador de Aventureiros]";
 		mes "Voce precisa estar em uma ^FF0000party^000000 para contratar um Aventureiro.";
@@ -41,8 +100,6 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 		mes "Crie uma party (^FF0000/organize <nome>^000000) ou junte-se a uma e volte aqui.";
 		close;
 	}
-
-	// Apenas o lider da party pode contratar.
 	if (!is_party_leader()) {
 		mes "[Treinador de Aventureiros]";
 		mes "So o ^FF0000lider da party^000000 pode contratar um Aventureiro.";
@@ -51,70 +108,27 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 		close;
 	}
 
-	// Soft-dedupe: variavel persistente por personagem evita contratar
-	// um segundo Aventureiro enquanto o primeiro ainda esta ativo. O
-	// ai-server ja faz anti-stack interno; isso so existe pra dar
-	// feedback claro ao player antes de cobrar zeny.
-	if (ADV_HIRED_UNTIL > gettimetick(2)) {
-		.@left = (ADV_HIRED_UNTIL - gettimetick(2)) / 60 + 1;
-		mes "[Treinador de Aventureiros]";
-		mes "Voce ja tem um Aventureiro contratado.";
-		mes "Restam ^0000FF" + .@left + " minuto(s)^000000.";
-		mes " ";
-		mes "Use ^FF0000@dismiss^000000 para dispensa-lo antes de contratar outro.";
-		close;
-	}
-
 	mes "[Treinador de Aventureiros]";
 	mes "Qual estilo de companheiro voce quer?";
 	next;
-	.@role = select(
-		"Suporte (cura+buff)",
-		"Tanker (segura aggro)",
-		"Cancelar"
-	);
+	.@role = select("Suporte (cura+buff)", "Tanker (segura aggro)", "Cancelar");
 	if (.@role == 3) close;
 
 	.@blvl = BaseLevel;
-
-	// Classe automatica pelo nivel do lider; tier escolhido para casar com
-	// o profile certo (ai-server ja escala HP/Atk via base_level_override).
 	if (.@role == 1) {
-		// ----- SUPORTE -----
-		//   <  40  -> Acolyte
-		//   40-69  -> Priest
-		//   70-98  -> High Priest
-		//   >= 99  -> Arch Bishop
-		if (.@blvl < 40) {
-			.@job = 4;     .@tier = 0; .@cls$ = "Acolyte";    .@jlvl = 50;
-		} else if (.@blvl < 70) {
-			.@job = 8;     .@tier = 1; .@cls$ = "Priest";     .@jlvl = 50;
-		} else if (.@blvl < 99) {
-			.@job = 4014;  .@tier = 1; .@cls$ = "High Priest"; .@jlvl = 70;
-		} else {
-			.@job = 4063;  .@tier = 2; .@cls$ = "Arch Bishop"; .@jlvl = 70;
-		}
-		.@role_id = 0;	// AI_HIRE_ROLE_SUPPORT
-		.@role_lbl$ = "Suporte";
+		if (.@blvl < 40)      { .@job = 4;    .@tier = 0; .@cls$ = "Acolyte";    .@jlvl = 50; }
+		else if (.@blvl < 70) { .@job = 8;    .@tier = 1; .@cls$ = "Priest";     .@jlvl = 50; }
+		else if (.@blvl < 99) { .@job = 4014; .@tier = 1; .@cls$ = "High Priest"; .@jlvl = 70; }
+		else                  { .@job = 4063; .@tier = 2; .@cls$ = "Arch Bishop"; .@jlvl = 70; }
+		.@role_id = 0; .@role_lbl$ = "Suporte";
 	} else {
-		// ----- TANKER -----
-		//   <  40  -> Swordsman
-		//   40-69  -> Crusader
-		//   70-98  -> Paladin
-		//   >= 99  -> Royal Guard
-		if (.@blvl < 40) {
-			.@job = 1;     .@tier = 0; .@cls$ = "Swordsman";   .@jlvl = 50;
-		} else if (.@blvl < 70) {
-			.@job = 14;    .@tier = 1; .@cls$ = "Crusader";    .@jlvl = 50;
-		} else if (.@blvl < 99) {
-			.@job = 4015;  .@tier = 2; .@cls$ = "Paladin";     .@jlvl = 70;
-		} else {
-			.@job = 4066;  .@tier = 2; .@cls$ = "Royal Guard"; .@jlvl = 70;
-		}
-		.@role_id = 1;	// AI_HIRE_ROLE_TANK
-		.@role_lbl$ = "Tanker";
+		if (.@blvl < 40)      { .@job = 1;    .@tier = 0; .@cls$ = "Swordsman";   .@jlvl = 50; }
+		else if (.@blvl < 70) { .@job = 14;   .@tier = 1; .@cls$ = "Crusader";    .@jlvl = 50; }
+		else if (.@blvl < 99) { .@job = 4015; .@tier = 2; .@cls$ = "Paladin";     .@jlvl = 70; }
+		else                  { .@job = 4066; .@tier = 2; .@cls$ = "Royal Guard"; .@jlvl = 70; }
+		.@role_id = 1; .@role_lbl$ = "Tanker";
 	}
-	.@adv_lvl = .@blvl;	// Aventureiro nasce no mesmo nivel do lider
+	.@adv_lvl = .@blvl;
 
 	mes "[Treinador de Aventureiros]";
 	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") tao forte quanto voce.";
@@ -125,8 +139,6 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	.@cost_5  = .@adv_lvl * 100 * 5;
 	.@cost_30 = .@adv_lvl * 100 * 30;
 	.@cost_60 = .@adv_lvl * 100 * 60;
-	// Se o player tem voucher, a opcao 60min troca o preco em zeny por
-	// "1 Voucher de Aventureiro" (consome o item ao confirmar).
 	.@has_voucher = (countitem(1270150) > 0);
 	.@label_60$ = .@has_voucher
 		? "60 minutos (^990099 1 Voucher de Aventureiro^000000)"
@@ -138,12 +150,10 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 		.@label_60$,
 		"Cancelar"
 	);
-
 	if (.@dur == 4) close;
 
 	setarray .@minutes[0], 5, 30, 60;
-	.@min   = .@minutes[.@dur - 1];
-	// Voucher so' substitui o pagamento na opcao 60min.
+	.@min = .@minutes[.@dur - 1];
 	.@pay_voucher = (.@dur == 3 && .@has_voucher);
 	.@price = .@pay_voucher ? 0 : (.@adv_lvl * 100 * .@min);
 
@@ -165,7 +175,6 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	if (select("Sim:Nao") == 2) close;
 
 	if (.@pay_voucher) {
-		// Re-checa contagem entre os menus (player pode ter dado trade).
 		if (countitem(1270150) < 1) {
 			mes "[Treinador de Aventureiros]";
 			mes "Voucher sumiu da sua bolsa. Volte quando tiver um.";
@@ -175,19 +184,20 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	} else {
 		Zeny -= .@price;
 	}
-	// 6 args: <job> <tier> <duration_min> <base_lvl> <job_lvl> <role>.
-	// O role byte (0=Suporte, 1=Tanker) seleciona se o ai-server roda
-	// somente o tick de cura ou tambem o tick de combate. O subcomando
-	// textual `@hire tank` / `@hire support` cobre o caso "auto pelo
-	// nivel"; aqui passamos a forma numerica porque o NPC ja escolheu
-	// classe/tier/duracao e queremos exatamente esses valores.
+
 	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl + " " + .@role_id;
 	ADV_HIRED_UNTIL = gettimetick(2) + .@min * 60;
+
+	// Persiste o contrato (idempotent — REPLACE em vez de INSERT cobre o
+	// caso raro de hire ter falhado em ai-server mas script ja ter cobrado).
+	query_sql "REPLACE INTO dro_merc_contracts (char_id, account_id, role, job, tier, base_level, job_level, paid_zeny, paid_voucher, duration_min, hired_at, expires_at) VALUES (" +
+		getcharid(0) + ", " + getcharid(3) + ", " + .@role_id + ", " + .@job + ", " + .@tier + ", " + .@adv_lvl + ", " + .@jlvl + ", " + .@price + ", " + (.@pay_voucher ? 1 : 0) + ", " + .@min + ", " + gettimetick(2) + ", " + (gettimetick(2) + .@min * 60) + ")";
+
 	mes "[Treinador de Aventureiros]";
-	if (.@role_id == 1) {
-		mes "Que ele segure a frente por voce. Use ^FF0000@dismiss^000000 a qualquer momento.";
-	} else {
-		mes "Que a luz te guie. Use ^FF0000@dismiss^000000 pra dispensa-lo a qualquer momento.";
-	}
+	if (.@role_id == 1)
+		mes "Que ele segure a frente por voce.";
+	else
+		mes "Que a luz te guie.";
+	mes "Volte aqui se quiser ^FF0000dispensar^000000 antes do tempo acabar.";
 	close;
 }

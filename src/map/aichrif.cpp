@@ -23,6 +23,8 @@
 #include "chrif.hpp"
 #include "party.hpp"
 #include "clif.hpp"
+#include "mapreg.hpp"
+#include "script.hpp"
 #include <common/mapindex.hpp>
 
 #include "map.hpp"
@@ -129,6 +131,12 @@ static int32 aichrif_handle_ping(int32 fd){
 	uint32 token = RFIFOL(fd, 4);
 	ShowInfo("ai-server: ping received (token=%u). Sending pong.\n", token);
 	aichrif_send_pong(fd, token);
+	// Phase 6.2 — record ai-server boot moment in mapreg $dro_ai_boot_ts.
+	// token=1 is the first ping after startup; the NPC Treinador uses this
+	// timestamp to detect orphan contracts (hired_at < $dro_ai_boot_ts ->
+	// the merc state was lost in a crash) and refund pro-rata.
+	if (token == 1)
+		mapreg_setreg(reference_uid(add_str("$dro_ai_boot_ts"), 0), (int)time(nullptr));
 	return 1;
 }
 
