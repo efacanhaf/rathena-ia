@@ -40,3 +40,21 @@
 Header:
   Type: INSTANCE_DB
   Version: 2
+
+Body:
+  # =========================================================================
+  # Old Glast Heim Advanced (kRO Hard mode).
+  # Reuses Normal's maps (1@gl_k entry, 2@gl_k second floor).
+  # ID 79 is taken upstream (Deep Forest), so we use 100 to start the
+  # custom DRO instance range.
+  # =========================================================================
+  - Id: 100
+    Name: Old Glast Heim Advanced
+    TimeLimit: 5400  # 1h30m per iRO Wiki Advanced spec
+    IdleTimeOut: 300
+    Enter:
+      Map: 1@gl_k
+      X: 150
+      Y: 20
+    AdditionalMaps:
+      2@gl_k: true

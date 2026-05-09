@@ -48,3 +48,19 @@
 Header:
   Type: QUEST_DB
   Version: 3
+
+Body:
+  # =========================================================================
+  # Advanced Old Glast Heim quests (kRO Hard mode)
+  # 12334 already exists in base (Trace of Time Travel / 4200000s timeout).
+  # =========================================================================
+  - Id: 12336
+    Title: Corrupted Soul Hunt
+    Targets:
+      - Mob: MG_CORRUPTION_ROOT_H
+        Count: 1
+  - Id: 12337
+    Title: Amdarais Soul Hunt
+    Targets:
+      - Mob: MG_AMDARAIS_H
+        Count: 1

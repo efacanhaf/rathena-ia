@@ -134,6 +134,7 @@ Thumbs.db
 /cbuild/
 
 # bat tools
+/aiserv.bat
 /charserv.bat
 /csv2yaml.bat
 /logserv.bat

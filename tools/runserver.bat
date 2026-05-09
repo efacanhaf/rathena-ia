@@ -19,6 +19,7 @@ set "login_running=false"
 set "char_running=false"
 set "web_running=false"
 set "map_running=false"
+set "ai_running=false"
 
 
 if "%target%" == "status" (
@@ -35,10 +36,11 @@ goto :EOF
 
 :Stop
 echo "Stoping all serv"
-call :stopLogin
-call :stopChar
-call :stopWeb
+call :stopAi
 call :stopMap
+call :stopWeb
+call :stopChar
+call :stopLogin
 goto :EOF
 
 :Watch
@@ -49,6 +51,7 @@ call :startLogin
 call :startChar
 call :startWeb
 call :startMap
+call :startAi
 goto :EOF
 
 :Start
@@ -58,6 +61,7 @@ call :startLogin
 call :startChar
 call :startWeb
 call :startMap
+call :startAi
 goto :EOF
 
 :getStatus
@@ -66,6 +70,7 @@ call :getLoginStatus
 call :getCharStatus
 call :getWebStatus
 call :getMapStatus
+call :getAiStatus
 
 if "%login_running%" == "false" ( echo "login_serv is not running"
 ) else echo "login_serv is running pid=%LoginServPID%"
@@ -75,6 +80,8 @@ if "%web_running%" == "false" ( echo "web_serv is not running"
 ) else echo "web_serv is running pid=%WebServPID%"
 if "%map_running%" == "false" ( echo "map_serv is not running"
 ) else echo "map_serv is running pid=%MapServPID%"
+if "%ai_running%" == "false" ( echo "ai_serv is not running"
+) else echo "ai_serv is running pid=%AiServPID%"
 
 goto :EOF
 
@@ -105,6 +112,11 @@ call :getMapStatus
 if "%map_running%" == "true" Taskkill /PID %MapServPID% /F
 goto :EOF
 
+:stopAi
+call :getAiStatus
+if "%ai_running%" == "true" Taskkill /PID %AiServPID% /F
+goto :EOF
+
 REM start sub targets
 :startLogin
 call :getLoginStatus
@@ -130,6 +142,14 @@ if "%map_running%" == "false" ( start cmd /k mapserv.bat %restart_mode%
 ) else echo "Map serv is already running, pid=%MapServPID%"
 goto :EOF
 
+REM ai-server connects to char-server and pings map-server, so it must
+REM start after they are up. runserver.bat calls them in order.
+:startAi
+call :getAiStatus
+if "%ai_running%" == "false" ( start cmd /k aiserv.bat %restart_mode%
+) else echo "Ai serv is already running, pid=%AiServPID%"
+goto :EOF
+
 REM status sub targets
 
 :getLoginStatus
@@ -150,4 +170,9 @@ goto :EOF
 :getMapStatus
 for /F "TOKENS=1,2,*" %%a in ('tasklist /FI "IMAGENAME eq map-server.exe"') do set MapServPID=%%b
 echo(%MapServPID%|findstr "^[-][1-9][0-9]*$ ^[1-9][0-9]*$ ^0$">nul&& set "map_running=true" || set "map_running=false"
+goto :EOF
+
+:getAiStatus
+for /F "TOKENS=1,2,*" %%a in ('tasklist /FI "IMAGENAME eq ai-server.exe"') do set AiServPID=%%b
+echo(%AiServPID%|findstr "^[-][1-9][0-9]*$ ^[1-9][0-9]*$ ^0$">nul&& set "ai_running=true" || set "ai_running=false"
 goto :EOF

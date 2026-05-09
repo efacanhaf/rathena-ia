@@ -6,6 +6,25 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-05-09
+
+### Adicionado — Old Glast Heim Advanced (Hard Mode)
+
+- Nova instância **Old Glast Heim Advanced** disponível para personagens
+  nível **160+** que já completaram o OGH Normal pelo menos uma vez.
+  Entrada por **Another Hugin** em `glast_01 (179, 283)`.
+- Tempo limite **1h30m**. Cooldown de 3 dias (compartilhado com o Normal).
+- Mesmo fluxo do OGH Normal — Varmundt, Heinrich, cutscenes, salas oeste e
+  leste — mas com mobs e MVPs escalados:
+  - 13 monstros novos (sufixo `_H`), level 160–180, 3-5x HP do Normal.
+  - **Amdarais** (Lv 180, 42,9M HP) e **Corruption Root** (Lv 180, 18,2M HP)
+    como MVPs.
+  - Drops melhorados: **Temporal Crystal**, **Coagulated Spell**, **Polluted
+    Spell**, **Patriotism Marks**, e cards próprios (`AmdaraisH_Card`,
+    `CorruptionRootH_Card`).
+- O Hugin original em `glast_01 (204, 273)` continua oferecendo o Normal —
+  Another Hugin existe especificamente para o modo Hard.
+
 ## 2026-05-08
 
 ### Adicionado — Sistema de Economia (Cambista, Temporal Tina)
