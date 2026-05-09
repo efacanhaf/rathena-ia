@@ -73,6 +73,12 @@ struct shell_state {
 	PACKET_AI_NEARBY_ENEMY enemies[AI_REPORT_MAX_ENEMIES];
 	t_tick last_report_tick;
 	t_tick last_cast_tick;  // throttle CAST attempts per shell
+	// Phase 6.2 — separate gate for combat-tick offensive casts. Tank mercs
+	// run BOTH support tick (every 250ms, bumps last_cast_tick frequently
+	// for self-buffs) and combat tick (every 250ms via 4-phase rotation).
+	// Without a separate counter, the support tick's frequent updates
+	// would starve the combat tick's 5s offensive-cast window.
+	t_tick last_combat_cast_tick;
 	t_tick last_chat_tick;  // throttle ambient chat per shell
 	t_tick last_action_tick;
 	bool   sitting;
@@ -95,6 +101,10 @@ struct shell_state {
 	// matching); owner_aid is the runtime account_id used for map_id2sd.
 	uint32 owner_aid;
 	uint32 owner_cid;
+	// Phase 6.2 — hire role. 0 = SUPPORT (heal-only, default Acolyte/Priest
+	// line); 1 = TANK (Sw/Crusader/Paladin/Royal Guard, runs combat tick +
+	// defensive self-buffs). Carried into init_snap for relogin respawn.
+	uint8  role;
 	uint8  owner_present;   // 1 if last REPORT had owner online
 	uint16 owner_mapindex;
 	uint16 owner_x, owner_y;
@@ -281,7 +291,7 @@ int32 aichrif_send_cast(int32 fd, uint32 shell_id, const char* skill_name,
 
 uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
-		uint16 base_level_override, uint16 job_level_override){
+		uint16 base_level_override, uint16 job_level_override, uint8 role){
 	using namespace rathena::server_ai;
 	if (aichrif_state != 2 || char_fd < 0) {
 		ShowWarning("aichrif_hire: not connected to char-server (state=%d).\n", aichrif_state);
@@ -349,6 +359,7 @@ uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 	st.hp = 1; st.max_hp = 1;
 	st.owner_aid = owner_aid;
 	st.owner_cid = owner_cid;
+	st.role = role;
 	st.hire_expires_at = duration_ms ? (gettick() + (t_tick)duration_ms) : 0;
 	// Snapshot for in-place respawn — though mercs don't respawn (they
 	// despawn on death/owner-gone), we keep the snapshot symmetrical.
@@ -377,8 +388,8 @@ uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 	g_shells_local.push_back(st);
 	g_merc_by_owner[owner_cid] = sid;
 
-	ShowStatus("ai-server: hired job=%u tier=%u as shell %u for char %u (aid %u) at %s(%u,%u) dur=%ums.\n",
-		job, tier, sid, owner_cid, owner_aid, map_name, x, y, duration_ms);
+	ShowStatus("ai-server: hired job=%u tier=%u role=%u as shell %u for char %u (aid %u) at %s(%u,%u) dur=%ums.\n",
+		job, tier, role, sid, owner_cid, owner_aid, map_name, x, y, duration_ms);
 	return sid;
 }
 
@@ -704,7 +715,7 @@ int32 aichrif_parse(int32 fd){
 				safestrncpy(mname, h->map_name, MAP_NAME_LENGTH_EXT);
 				aichrif_hire(h->job, h->tier, h->owner_aid, h->owner_cid, mname,
 					h->x, h->y, h->duration_ms,
-					h->base_level_override, h->job_level_override);
+					h->base_level_override, h->job_level_override, h->role);
 				RFIFOSKIP(fd, h->len);
 				break;
 			}
@@ -1115,9 +1126,15 @@ static TIMER_FUNC(aichrif_combat_timer){
 		if (DIFF_TICK(now, s.last_report_tick) > 3000) continue;
 		if (s.hp == 0) continue;
 		// Phase 6 — mercenary shells run their support rotation in
-		// aichrif_support_timer; the combat tick for autonomous engagement
-		// doesn't apply to them.
-		if (s.owner_aid != 0) continue;
+		// aichrif_support_timer.
+		// Phase 6.2 — TANK-role mercs ALSO run the combat tick (engage
+		// enemies, cast offense). SUPPORT mercs stay heal-only.
+		if (s.owner_aid != 0 && s.role != AI_HIRE_ROLE_TANK) continue;
+		// Tank mercs need an owner online to make follow/engagement coherent.
+		// (Otherwise the shell could chase a mob across the map while the
+		//  owner is offline, or pick a target the owner can't see.)
+		if (s.owner_aid != 0 && !s.owner_present) continue;
+		if (s.suspended) continue;
 		// Town shells don't engage — they're meant to look like idle traffic
 		// (chat, sit, vending in Phase 3). Field/dungeon always hunt.
 		if (s.cat == spawn_category::TOWN) continue;
@@ -1131,20 +1148,38 @@ static TIMER_FUNC(aichrif_combat_timer){
 			if (s.target_id != 0) s.target_id = 0;
 			continue;
 		}
-		// Target jitter: pick among top-3 closest (or fewer). Weights:
-		// 50% closest, 30% second, 20% third. With <3 enemies, falls back.
-		uint8 max_pick = (uint8)std::min<uint8>(s.enemy_count, 3);
-		uint8 r = (uint8)(rnd() % 100);
-		uint8 idx = (max_pick >= 3 && r >= 80) ? 2
-				 : (max_pick >= 2 && r >= 50) ? 1
-				 : 0;
-		uint32 tid = s.enemies[idx].id;
-		if (tid == 0) tid = s.enemies[0].id;
+		uint8 idx = 0;
+		uint32 tid = 0;
+		// Phase 6.2 — tank merc target preference: if the owner is hitting
+		// something we can see, that's our priority. Otherwise (or if the
+		// owner has no target), fall back to the autonomous "top-3 closest"
+		// jitter. Owner_target preference also covers "mob attacking owner"
+		// because the player typically retaliates against the same mob.
+		if (s.role == AI_HIRE_ROLE_TANK && s.owner_target_id != 0) {
+			for (uint8 i = 0; i < s.enemy_count; i++) {
+				if (s.enemies[i].id == s.owner_target_id) {
+					idx = i;
+					tid = s.enemies[i].id;
+					break;
+				}
+			}
+		}
+		if (tid == 0) {
+			// Target jitter: pick among top-3 closest (or fewer). Weights:
+			// 50% closest, 30% second, 20% third.
+			uint8 max_pick = (uint8)std::min<uint8>(s.enemy_count, 3);
+			uint8 r = (uint8)(rnd() % 100);
+			idx = (max_pick >= 3 && r >= 80) ? 2
+				: (max_pick >= 2 && r >= 50) ? 1
+				: 0;
+			tid = s.enemies[idx].id;
+			if (tid == 0) tid = s.enemies[0].id;
+		}
 		if (tid == 0) continue;
 
 		const skill_rotation* rot = skill_picker_get(s.job);
 		const skill_entry* pick = nullptr;
-		if (rot != nullptr && DIFF_TICK(now, s.last_cast_tick) > 5000) {
+		if (rot != nullptr && DIFF_TICK(now, s.last_combat_cast_tick) > 5000) {
 			shell_ctx ctx;
 			ctx.hp = s.hp; ctx.max_hp = s.max_hp;
 			ctx.sp = s.sp; ctx.max_sp = s.max_sp;
@@ -1164,7 +1199,13 @@ static TIMER_FUNC(aichrif_combat_timer){
 			ctx.target_is_mvp   = (s.enemies[idx].flags & AI_ENEMY_FLAG_MVP) != 0;
 			pick = skill_picker_choose(*rot, ctx, &s.skill_cursor);
 		}
-		if (pick != nullptr && !pick->skill_name.empty()) {
+		// Phase 6.2 — skip OWNER/PARTY/ALLY entries in combat tick. Tank
+		// rotations include those for the support tick to handle (heal
+		// owner, devotion, kyrie). The picker doesn't filter by target,
+		// so we filter here and fall through to ATTACK instead.
+		bool pick_is_combat_target = (pick != nullptr) &&
+			(pick->target == skill_target::TARGET || pick->target == skill_target::SELF);
+		if (pick != nullptr && !pick->skill_name.empty() && pick_is_combat_target) {
 			uint8 kind = AI_CAST_KIND_ID;
 			uint32 cast_target = tid;
 			if (pick->target == skill_target::SELF) {
@@ -1174,6 +1215,7 @@ static TIMER_FUNC(aichrif_combat_timer){
 			aichrif_send_cast(char_fd, s.shell_id, pick->skill_name.c_str(),
 				pick->level, kind, cast_target, 0, 0);
 			s.last_cast_tick = now;
+			s.last_combat_cast_tick = now;
 		} else if (!skill_picker_is_caster(s.job)) {
 			// Pure casters wait (SP regen, cooldown, condition flip) instead
 			// of whacking with a staff. Melee/hybrid jobs auto-attack.
@@ -1231,8 +1273,12 @@ static TIMER_FUNC(aichrif_support_timer){
 		const skill_entry* pick = skill_picker_choose(*rot, ctx,
 			/*cursor=*/nullptr, &s.skill_cooldown_until, now);
 		if (pick == nullptr || pick->skill_name.empty()) continue;
-		// Skip non-emergency skills while damaged or moving.
-		if (owner_damaged || owner_moving) {
+		// Skip non-emergency skills while damaged or moving — but SELF
+		// target skills (Auto Guard / Endure / Reflect Shield etc) keep
+		// firing because they don't require facing/staying near owner.
+		// Phase 6.2: tank merc needs its self-buffs up before combat,
+		// not after first hit. Only OWNER/PARTY/ALLY targets get filtered.
+		if ((owner_damaged || owner_moving) && pick->target != skill_target::SELF) {
 			bool is_emergency =
 				pick->condition == skill_cond::HP_BELOW          ||
 				pick->condition == skill_cond::OWNER_HP_BELOW    ||

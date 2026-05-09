@@ -296,6 +296,13 @@ struct PACKET_AI_OWNER_BACK_S {
 /// point and sends this. ai-server allocates a shell, picks the right
 /// profile tier, and emits a normal SHELL_SPAWN. No ack packet (the
 /// player feels the success when the merc spawns next to them).
+// Phase 6.2 — role flag in HIRE_REQUEST. SUPPORT=0 (default, Acolyte/Priest
+// line, support tick only). TANK=1 (Sw/Crusader/Paladin/RG line, runs combat
+// tick + defensive support). Old build with role=0-implicit still hires
+// support correctly because byte was previously zeroed pad.
+constexpr uint8 AI_HIRE_ROLE_SUPPORT = 0;
+constexpr uint8 AI_HIRE_ROLE_TANK    = 1;
+
 struct PACKET_AI_HIRE_REQUEST_S {
 	uint16 cmd;
 	uint16 len;
@@ -303,7 +310,7 @@ struct PACKET_AI_HIRE_REQUEST_S {
 	uint32 owner_cid;	// Phase 6 — char_id; merc is bound to character, not account
 	uint16 job;       // 4=Acolyte, 8=Priest, 4014=High Priest, 4063=Arch Bishop
 	uint8  tier;      // 0..2 — picked by map-side based on player's level
-	uint8  pad;
+	uint8  role;      // Phase 6.2 — AI_HIRE_ROLE_* (was pad; zero = SUPPORT)
 	char   map_name[MAP_NAME_LENGTH_EXT];
 	uint16 x, y;
 	uint32 duration_ms;

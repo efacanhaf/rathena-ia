@@ -77,9 +77,14 @@ int32 aichrif_send_despawn(int32 fd, uint32 shell_id, uint8 reason);
 /// base_level_override / job_level_override default to 0 = "use the
 /// profile values". Set non-zero to scale a Priest-line merc up to the
 /// party leader's level (e.g. lvl-175 AB instead of fixed T2 lvl 130).
+///
+/// Phase 6.2 — `role` selects behavior cluster. SUPPORT=0 runs only the
+/// support tick (heals/buffs/cleanses). TANK=1 runs the combat tick too
+/// (engages enemies, prefers owner's target) and uses defensive self-buffs.
 uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
-		uint16 base_level_override = 0, uint16 job_level_override = 0);
+		uint16 base_level_override = 0, uint16 job_level_override = 0,
+		uint8 role = 0 /* AI_HIRE_ROLE_SUPPORT */);
 
 /// Tell the map-server to walk a shell to (x, y).
 int32 aichrif_send_walk_to(int32 fd, uint32 shell_id, uint16 x, uint16 y);

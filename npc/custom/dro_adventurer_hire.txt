@@ -1,30 +1,35 @@
 //===== DimensionsRO ==========================================
-//= Treinador de Aventureiros (Phase 6 — ai-server hired support shells)
+//= Treinador de Aventureiros (Phase 6 + 6.2)
 //===== Description: =========================================
 //= NPC para contratar um Aventureiro de suporte (linha
-//= Acolyte/Priest/High Priest/Arch Bishop). O Aventureiro e' um
-//= BL_PC controlado pelo ai-server: segue o player, cura,
-//= buffa, cura status, faz Lex Aeterna em alvos do owner.
+//= Acolyte/Priest/HP/AB) ou um Aventureiro Tanker (linha
+//= Swordsman/Crusader/Paladin/Royal Guard). Os Aventureiros
+//= sao BL_PCs controlados pelo ai-server.
 //=
-//= Regras:
+//= - Suporte: cura, buffa, cura status, faz Lex Aeterna no
+//=   alvo do owner (so' suporte, nao ataca).
+//= - Tanker: corre pra brigar, segura aggro com Provoke +
+//=   Devotion, usa Auto Guard / Reflect Shield / Defending
+//=   Aura, prefere o alvo do owner.
+//=
+//= Regras (ambos):
 //=  1) So' o LIDER da party pode contratar.
-//=  2) O nivel do Aventureiro e' derivado do nivel do lider
-//=     (nao ha' escolha de tier — o player so escolhe a duracao).
-//=  3) Preco escala com o nivel:
-//=        zeny/min = adv_lvl * 100
+//=  2) Classe automatica pelo nivel do lider; nivel do
+//=     Aventureiro = nivel do lider.
+//=  3) Preco escala com o nivel: zeny/min = adv_lvl * 100
 //=     Ex: AB lvl 130 por 60min = 130 * 100 * 60 = 780,000z.
-//=  4) Apos confirmar: cobra zeny, roda @hire, Aventureiro spawna em
-//=     1-2s, entra na party automaticamente, segue/cura/buffa.
-//=  5) Item Voucher_Adventurer (1270150) e' aceito como moeda de
-//=     troca: 1 voucher = 60 minutos sem custo de zeny.
+//=  4) Item Voucher_Adventurer (1270150) = 60min sem zeny.
+//=  5) Soft-dedupe via ADV_HIRED_UNTIL evita comprar dois
+//=     ao mesmo tempo (anti-stack real esta no ai-server).
 //============================================================
 
 prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	mes "[Treinador de Aventureiros]";
 	mes "Ola, aventureiro. Veio buscar um companheiro de jornada?";
 	mes " ";
-	mes "Tenho uns rapazes e mocas dispostos a te seguir, te curar e te abencoar.";
-	mes "(eles nao atacam por conta propria, mas seguram a barra)";
+	mes "Posso te indicar dois tipos:";
+	mes "- ^990099Aventureiro de Suporte^000000 (cura, buffa, segura barra)";
+	mes "- ^FF0000Aventureiro Tanker^000000 (corre pra frente, segura aggro)";
 	next;
 
 	// Party requirement — o Aventureiro entra na party do owner; sem party
@@ -60,35 +65,59 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 		close;
 	}
 
+	mes "[Treinador de Aventureiros]";
+	mes "Qual estilo de companheiro voce quer?";
+	next;
+	.@role = select(
+		"Suporte (cura+buff)",
+		"Tanker (segura aggro)",
+		"Cancelar"
+	);
+	if (.@role == 3) close;
+
 	.@blvl = BaseLevel;
 
-	// Classe automatica pelo nivel do lider; o nivel do Aventureiro casa
-	// com o nivel do lider (ai-server escala via base_level_override).
-	//   <  40  -> Acolyte
-	//   40-69  -> Priest
-	//   70-98  -> High Priest
-	//   >= 99  -> Arch Bishop
-	if (.@blvl < 40) {
-		.@job = 4;     .@tier = 0;
-		.@cls$ = "Acolyte";
-		.@jlvl = 50;	// Acolyte job max
-	} else if (.@blvl < 70) {
-		.@job = 8;     .@tier = 1;
-		.@cls$ = "Priest";
-		.@jlvl = 50;	// Priest job max
-	} else if (.@blvl < 99) {
-		.@job = 4014;  .@tier = 1;
-		.@cls$ = "High Priest";
-		.@jlvl = 70;	// HP job max
+	// Classe automatica pelo nivel do lider; tier escolhido para casar com
+	// o profile certo (ai-server ja escala HP/Atk via base_level_override).
+	if (.@role == 1) {
+		// ----- SUPORTE -----
+		//   <  40  -> Acolyte
+		//   40-69  -> Priest
+		//   70-98  -> High Priest
+		//   >= 99  -> Arch Bishop
+		if (.@blvl < 40) {
+			.@job = 4;     .@tier = 0; .@cls$ = "Acolyte";    .@jlvl = 50;
+		} else if (.@blvl < 70) {
+			.@job = 8;     .@tier = 1; .@cls$ = "Priest";     .@jlvl = 50;
+		} else if (.@blvl < 99) {
+			.@job = 4014;  .@tier = 1; .@cls$ = "High Priest"; .@jlvl = 70;
+		} else {
+			.@job = 4063;  .@tier = 2; .@cls$ = "Arch Bishop"; .@jlvl = 70;
+		}
+		.@role_id = 0;	// AI_HIRE_ROLE_SUPPORT
+		.@role_lbl$ = "Suporte";
 	} else {
-		.@job = 4063;  .@tier = 2;
-		.@cls$ = "Arch Bishop";
-		.@jlvl = 70;	// AB job max
+		// ----- TANKER -----
+		//   <  40  -> Swordsman
+		//   40-69  -> Crusader
+		//   70-98  -> Paladin
+		//   >= 99  -> Royal Guard
+		if (.@blvl < 40) {
+			.@job = 1;     .@tier = 0; .@cls$ = "Swordsman";   .@jlvl = 50;
+		} else if (.@blvl < 70) {
+			.@job = 14;    .@tier = 1; .@cls$ = "Crusader";    .@jlvl = 50;
+		} else if (.@blvl < 99) {
+			.@job = 4015;  .@tier = 2; .@cls$ = "Paladin";     .@jlvl = 70;
+		} else {
+			.@job = 4066;  .@tier = 2; .@cls$ = "Royal Guard"; .@jlvl = 70;
+		}
+		.@role_id = 1;	// AI_HIRE_ROLE_TANK
+		.@role_lbl$ = "Tanker";
 	}
 	.@adv_lvl = .@blvl;	// Aventureiro nasce no mesmo nivel do lider
 
 	mes "[Treinador de Aventureiros]";
-	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 tao forte quanto voce.";
+	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") tao forte quanto voce.";
 	mes " ";
 	mes "Por quanto tempo voce quer a companhia dele?";
 	next;
@@ -126,10 +155,10 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 
 	mes "[Treinador de Aventureiros]";
 	if (.@pay_voucher) {
-		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos.";
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") contigo por " + .@min + " minutos.";
 		mes "Em troca: ^FF00001 Voucher de Aventureiro^000000.";
 	} else {
-		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos.";
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") contigo por " + .@min + " minutos.";
 		mes "Em troca: ^0000FF" + .@price + "z^000000.";
 	}
 	next;
@@ -146,9 +175,19 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	} else {
 		Zeny -= .@price;
 	}
-	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl;
+	// 6 args: <job> <tier> <duration_min> <base_lvl> <job_lvl> <role>.
+	// O role byte (0=Suporte, 1=Tanker) seleciona se o ai-server roda
+	// somente o tick de cura ou tambem o tick de combate. O subcomando
+	// textual `@hire tank` / `@hire support` cobre o caso "auto pelo
+	// nivel"; aqui passamos a forma numerica porque o NPC ja escolheu
+	// classe/tier/duracao e queremos exatamente esses valores.
+	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl + " " + .@role_id;
 	ADV_HIRED_UNTIL = gettimetick(2) + .@min * 60;
 	mes "[Treinador de Aventureiros]";
-	mes "Que a luz te guie. Use ^FF0000@dismiss^000000 pra dispensa-lo a qualquer momento.";
+	if (.@role_id == 1) {
+		mes "Que ele segure a frente por voce. Use ^FF0000@dismiss^000000 a qualquer momento.";
+	} else {
+		mes "Que a luz te guie. Use ^FF0000@dismiss^000000 pra dispensa-lo a qualquer momento.";
+	}
 	close;
 }

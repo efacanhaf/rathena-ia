@@ -44,7 +44,8 @@ bool aishell_is_shell(uint32 account_id);
 /// the party leader).
 int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 tier,
 		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
-		uint16 base_level_override = 0, uint16 job_level_override = 0);
+		uint16 base_level_override = 0, uint16 job_level_override = 0,
+		uint8 role = 0 /* AI_HIRE_ROLE_SUPPORT */);
 
 /// Phase 6 — manual dismiss. Tears down the merc shell of `owner_cid`
 /// (char_id) without waiting for the contract timer. ai-server is the

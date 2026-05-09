@@ -399,37 +399,43 @@ Body:
       # -- reactive hide --
       - { SkillId: TF_HIDING,         Level: 10, Rate: 6000, Target: 1, Condition: self_targeted }
 
-  # JOB_CRUSADER = 14 (SkillId 255 = CR_DEVOTION; name lookup has known resolution issue)
+  # JOB_CRUSADER = 14 — Phase 6.2: tanker merc rotation. The support tick
+  # uses priority-order (cursor=null) so the entries near the top fire first
+  # when their condition matches; combat tick uses round-robin so attacks
+  # rotate over time. Self-defenses with no SC bit in REPORT (Reflect, Def,
+  # Spear Quicken) use Cooldown to avoid recast spam.
+  # SkillId 255 = CR_DEVOTION (numeric — name lookup mismatch in skill_db).
   - JobId: 14
     Skills:
-      # -- passive --
+      # -- passives --
       - { SkillId: CR_TRUST,           Level: 10, Rate: 10000 }
       - { SkillId: KN_SPEARMASTERY,    Level: 10, Rate: 10000 }
       - { SkillId: KN_CAVALIERMASTERY, Level: 5,  Rate: 10000 }
       - { SkillId: KN_RIDING,          Level: 1,  Rate: 10000 }
       - { SkillId: AL_DP,              Level: 10, Rate: 10000 }
       - { SkillId: AL_DEMONBANE,       Level: 10, Rate: 10000 }
-      # -- offense --
-      - { SkillId: CR_HOLYCROSS,       Level: 10, Rate: 10000 }
-      - { SkillId: CR_GRANDCROSS,      Level: 10, Rate: 8000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: CR_SHIELDBOOMERANG, Level: 5,  Rate: 6000, Condition: distance_above, CondValue: 2 }
-      - { SkillId: CR_SHIELDCHARGE,    Level: 5,  Rate: 5000  }
-      - { SkillId: SM_PROVOKE,         Level: 10, Rate: 5000, Condition: not_enemy_status, CondValue: SC_PROVOKE }
-      # -- heals --
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 40 }
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
-      # -- support --
-      - { SkillId: 255,                Level: 5,  Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_DEVOTION }
-      - { SkillId: PR_KYRIE,           Level: 10, Rate: 8000, Target: 1, Condition: not_self_status, CondValue: SC_KYRIE }
-      - { SkillId: CR_PROVIDENCE,      Level: 5,  Rate: 7000, Target: 2, Condition: not_ally_status, CondValue: SC_PROVIDENCE }
-      # -- self-buffs --
+      # -- self emergency heal (top priority) --
+      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 35 }
+      # -- self defensive buffs (SC tracked) --
       - { SkillId: CR_AUTOGUARD,       Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_AUTOGUARD }
-      - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_REFLECTSHIELD }
-      - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_DEFENDER }
-      - { SkillId: CR_SPEARQUICKEN,    Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_SPEARQUICKEN }
-      - { SkillId: SM_ENDURE,          Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_ENDURE }
-      # -- defense --
-      - { SkillId: AL_PNEUMA,          Level: 1,  Target: 1, Condition: range_attacked }
+      - { SkillId: SM_ENDURE,          Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_ENDURE }
+      # -- self defensive buffs (no SC bit — guarded by cooldown). Defender
+      # NAO entra no auto-buff: lima a velocidade pra 30% e quebra o follow.
+      # Reativa via range_attacked.
+      - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
+      - { SkillId: CR_SPEARQUICKEN,    Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
+      # -- owner protection (tank merc only — autonomous shells have owner_aid=0) --
+      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 50 }
+      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Cooldown: 30000 }
+      - { SkillId: CR_PROVIDENCE,      Level: 5,  Rate: 10000, Target: 3, Cooldown: 280000 }
+      # -- reactive defense --
+      - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
+      # -- offense (combat tick fires these in round-robin) --
+      - { SkillId: SM_PROVOKE,         Level: 10, Rate: 8000, Condition: not_enemy_status, CondValue: SC_PROVOKE }
+      - { SkillId: CR_HOLYCROSS,       Level: 10, Rate: 10000 }
+      - { SkillId: CR_GRANDCROSS,      Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
+      - { SkillId: CR_SHIELDBOOMERANG, Level: 5,  Rate: 8000, Condition: distance_above, CondValue: 2 }
+      - { SkillId: CR_SHIELDCHARGE,    Level: 5,  Rate: 7000  }
 
   # JOB_MONK = 15 (sphere-chain state machine handles CALLSPIRITS/FURY/ASURA)
   - JobId: 15
@@ -755,39 +761,38 @@ Body:
       # -- reactive hide --
       - { SkillId: TF_HIDING,          Level: 10, Rate: 6000, Target: 1, Condition: self_targeted }
 
-  # JOB_PALADIN = 4015 (SkillId 255 = CR_DEVOTION)
+  # JOB_PALADIN = 4015 — Phase 6.2: tanker merc rotation. Same priority
+  # structure as Crusader; adds Shield Chain / Pressure / Kyrie-on-owner.
   - JobId: 4015
     Skills:
-      # -- passive --
+      # -- passives --
       - { SkillId: CR_TRUST,           Level: 10, Rate: 10000 }
       - { SkillId: KN_SPEARMASTERY,    Level: 10, Rate: 10000 }
       - { SkillId: KN_CAVALIERMASTERY, Level: 5,  Rate: 10000 }
       - { SkillId: KN_RIDING,          Level: 1,  Rate: 10000 }
       - { SkillId: AL_DP,              Level: 10, Rate: 10000 }
       - { SkillId: AL_DEMONBANE,       Level: 10, Rate: 10000 }
-      # -- offense --
-      - { SkillId: PA_SHIELDCHAIN,     Level: 5,  Rate: 10000 }
-      - { SkillId: PA_PRESSURE,        Level: 5,  Rate: 8000  }
-      - { SkillId: CR_HOLYCROSS,       Level: 10, Rate: 6000  }
-      - { SkillId: CR_GRANDCROSS,      Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: CR_SHIELDBOOMERANG, Level: 5,  Rate: 5000, Condition: distance_above, CondValue: 2 }
-      - { SkillId: SM_PROVOKE,         Level: 10, Rate: 5000, Condition: not_enemy_status, CondValue: SC_PROVOKE }
-      # -- heals --
+      # -- self emergency heal --
       - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 40 }
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
-      # -- support --
-      - { SkillId: 255,                Level: 5,  Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_DEVOTION }
-      - { SkillId: PR_KYRIE,           Level: 10, Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_KYRIE }
-      - { SkillId: CR_PROVIDENCE,      Level: 5,  Rate: 7000, Target: 2, Condition: not_ally_status, CondValue: SC_PROVIDENCE }
-      # -- self-buffs --
+      # -- self defensive buffs (SC tracked) --
       - { SkillId: CR_AUTOGUARD,       Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_AUTOGUARD }
-      - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_REFLECTSHIELD }
-      - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_DEFENDER }
-      - { SkillId: CR_SPEARQUICKEN,    Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_SPEARQUICKEN }
-      - { SkillId: SM_ENDURE,          Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_ENDURE }
-      # -- defense --
-      - { SkillId: AL_PNEUMA,          Level: 1,  Target: 1, Condition: range_attacked }
-      #- { SkillId: PA_GOSPEL,          Level: 10, Rate: 5000, Target: 1, Condition: not_self_status, CondValue: SC_GOSPEL }
+      - { SkillId: SM_ENDURE,          Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_ENDURE }
+      # -- self defensive buffs (no SC — guarded by cooldown) --
+      - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
+      - { SkillId: CR_SPEARQUICKEN,    Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
+      # -- owner protection (tank merc only) --
+      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 55 }
+      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Cooldown: 30000 }
+      - { SkillId: CR_PROVIDENCE,      Level: 5,  Rate: 10000, Target: 3, Cooldown: 280000 }
+      # -- reactive defense --
+      - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
+      # -- offense (combat tick — round-robin) --
+      - { SkillId: SM_PROVOKE,         Level: 10, Rate: 8000, Condition: not_enemy_status, CondValue: SC_PROVOKE }
+      - { SkillId: PA_SHIELDCHAIN,     Level: 5,  Rate: 10000 }
+      - { SkillId: PA_PRESSURE,        Level: 5,  Rate: 9000  }
+      - { SkillId: CR_HOLYCROSS,       Level: 10, Rate: 8000  }
+      - { SkillId: CR_GRANDCROSS,      Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
+      - { SkillId: CR_SHIELDBOOMERANG, Level: 5,  Rate: 8000, Condition: distance_above, CondValue: 2 }
 
   # JOB_CHAMPION = 4016 (sphere-chain state machine handles the full chain)
   - JobId: 4016
@@ -1337,50 +1342,50 @@ Body:
       - { SkillId: GC_POISONSMOKE,        Level: 5,  Rate: 4000  }
 
   # JOB_ROYAL_GUARD = 4066 / JOB_ROYAL_GUARD_T = 4073
+  # Phase 6.2 — tanker merc rotation. Top of list runs first via support
+  # tick (priority order); combat tick rotates through offense.
   - JobId: 4066
     Skills:
-      # -- passive --
+      # -- passives --
       - { SkillId: CR_TRUST,           Level: 10, Rate: 10000 }
       - { SkillId: KN_SPEARMASTERY,    Level: 10, Rate: 10000 }
       - { SkillId: KN_CAVALIERMASTERY, Level: 5,  Rate: 10000 }
       - { SkillId: KN_RIDING,          Level: 1,  Rate: 10000 }
       - { SkillId: AL_DP,              Level: 10, Rate: 10000 }
       - { SkillId: AL_DEMONBANE,       Level: 10, Rate: 10000 }
-      # -- offense --
-      - { SkillId: LG_BANISHINGPOINT,  Level: 10, Rate: 10000 }
+      # -- self emergencies (top priority) --
+      - { SkillId: LG_KINGS_GRACE,     Level: 5,  Rate: 10000, Target: 1, Condition: hp_below, CondValue: 25, Cooldown: 60000 }
+      - { SkillId: LG_INSPIRATION,     Level: 5,  Rate: 10000, Target: 1, Condition: hp_below, CondValue: 35, Cooldown: 300000 }
+      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 45 }
+      # -- self defensive buffs (SC tracked) --
+      - { SkillId: CR_AUTOGUARD,       Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_AUTOGUARD }
+      - { SkillId: SM_ENDURE,          Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_ENDURE }
+      # -- self defensive buffs (no SC bit — guarded by Cooldown). Defender
+      # and Banding NAO sao auto-cast: Defender corta movement speed pra
+      # 30%, Banding fixa o RG no lugar — ambos sabotam o follow do tanker.
+      # Defender vira reativa (only when ranged-attacked).
+      - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
+      - { SkillId: LG_PRESTIGE,        Level: 5,  Rate: 10000, Target: 1, Cooldown: 60000 }
+      - { SkillId: LG_FORCEOFVANGUARD, Level: 5,  Rate: 10000, Target: 1, Cooldown: 280000 }
+      # -- owner protection (tank merc only) --
+      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 60 }
+      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Cooldown: 30000 }
+      - { SkillId: LG_PIETY,           Level: 5,  Rate: 10000, Target: 3, Cooldown: 280000 }
+      # -- reactive defense --
+      - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
+      - { SkillId: LG_REFLECTDAMAGE,   Level: 5,  Rate: 10000, Target: 1, Condition: melee_attacked, Cooldown: 60000 }
+      # -- offense (combat tick — round-robin) --
+      - { SkillId: LG_SHIELDPRESS,     Level: 10, Rate: 10000 }
+      - { SkillId: LG_BANISHINGPOINT,  Level: 10, Rate: 9000  }
       - { SkillId: LG_CANNONSPEAR,     Level: 5,  Rate: 8000, Condition: distance_above, CondValue: 3 }
       - { SkillId: LG_OVERBRAND,       Level: 5,  Rate: 8000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_RAYOFGENESIS,    Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_SHIELDPRESS,     Level: 10, Rate: 6000  }
-      - { SkillId: LG_MOONSLASHER,     Level: 5,  Rate: 5000, Condition: enemy_count_nearby, CondValue: 3 }
-      - { SkillId: LG_EARTHDRIVE,      Level: 5,  Rate: 5000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_HESPERUSLIT,     Level: 5,  Rate: 5000  }
-      - { SkillId: LG_PINPOINTATTACK,  Level: 5,  Rate: 4000  }
-      - { SkillId: PA_SHIELDCHAIN,     Level: 5,  Rate: 5000  }
-      - { SkillId: PA_PRESSURE,        Level: 5,  Rate: 5000  }
-      # -- heals --
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 40 }
-      - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
-      # -- support --
-      - { SkillId: 255,                Level: 5,  Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_DEVOTION }
-      - { SkillId: PR_KYRIE,           Level: 10, Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_KYRIE }
-      - { SkillId: LG_PIETY,           Level: 5,  Rate: 6000, Target: 2 }
-      # -- self-buffs --
-      - { SkillId: CR_AUTOGUARD,       Level: 10, Rate: 10000, Target: 1, Condition: not_self_status, CondValue: SC_AUTOGUARD }
-      - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_REFLECTSHIELD }
-      - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_DEFENDER }
-      - { SkillId: LG_PRESTIGE,        Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_PRESTIGE }
-      - { SkillId: LG_FORCEOFVANGUARD, Level: 5,  Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_FORCEOFVANGUARD }
-      - { SkillId: LG_BANDING,         Level: 5,  Rate: 6000,  Target: 1, Condition: not_self_status, CondValue: SC_BANDING }
-      - { SkillId: LG_SHIELDSPELL,     Level: 3,  Rate: 6000,  Target: 1 }
-      - { SkillId: LG_EXEEDBREAK,      Level: 5,  Rate: 6000,  Target: 1 }
-      - { SkillId: SM_ENDURE,          Level: 10, Rate: 8000,  Target: 1, Condition: not_self_status, CondValue: SC_ENDURE }
-      # -- defense --
-      - { SkillId: LG_REFLECTDAMAGE,   Level: 5,  Rate: 6000, Target: 1, Condition: melee_attacked }
-      - { SkillId: AL_PNEUMA,          Level: 1,  Target: 1, Condition: range_attacked }
-      # -- emergency --
-      - { SkillId: LG_INSPIRATION,     Level: 5,  Rate: 5000, Target: 1, Condition: hp_below, CondValue: 25 }
-      - { SkillId: LG_KINGS_GRACE,     Level: 5,  Rate: 5000, Target: 1, Condition: hp_below, CondValue: 20 }
+      - { SkillId: LG_MOONSLASHER,     Level: 5,  Rate: 7000, Condition: enemy_count_nearby, CondValue: 3 }
+      - { SkillId: LG_EARTHDRIVE,      Level: 5,  Rate: 6000, Condition: enemy_count_nearby, CondValue: 2 }
+      - { SkillId: LG_RAYOFGENESIS,    Level: 10, Rate: 6000, Condition: enemy_count_nearby, CondValue: 2 }
+      - { SkillId: LG_HESPERUSLIT,     Level: 5,  Rate: 6000  }
+      - { SkillId: LG_PINPOINTATTACK,  Level: 5,  Rate: 5000  }
+      - { SkillId: PA_SHIELDCHAIN,     Level: 5,  Rate: 6000  }
+      - { SkillId: PA_PRESSURE,        Level: 5,  Rate: 6000  }
   - JobId: 4073
     Skills:
       # -- passive --

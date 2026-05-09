@@ -82,7 +82,7 @@ map_session_data* aishell_find(uint32 shell_id){
 /// Reply to ai-server with PACKET_AI_PONG. Length-prefixed (8 bytes).
 int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 tier,
 		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
-		uint16 base_level_override, uint16 job_level_override){
+		uint16 base_level_override, uint16 job_level_override, uint8 role){
 	if (char_fd < 0 || session[char_fd] == nullptr) return -1;
 	PACKET_AI_HIRE_REQUEST_S p{};
 	p.cmd = PACKET_AI_HIRE_REQUEST;
@@ -91,6 +91,7 @@ int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 ti
 	p.owner_cid = owner_cid;
 	p.job = job;
 	p.tier = tier;
+	p.role = role;
 	safestrncpy(p.map_name, map_name, MAP_NAME_LENGTH_EXT);
 	p.x = x;
 	p.y = y;
@@ -335,6 +336,33 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->battle_status.sp = sd->battle_status.max_sp;
 	sd->status.hp = sd->battle_status.max_hp;
 	sd->status.sp = sd->battle_status.max_sp;
+
+	// Phase 6.2 — auto-mount for spear/shield tanker classes. Knight line
+	// rides a Peco; Rune Knight rides a Dragon. Setting the option bit
+	// before clif_spawn means the merc shows up already mounted in the
+	// client (changeoption broadcast after spawn would also work, but is
+	// an extra packet). status_calc_pc has run, so KN_RIDING is in the
+	// skill tree — purely cosmetic check, the option drives the visual.
+	switch (sd->status.class_) {
+		case JOB_KNIGHT:
+		case JOB_KNIGHT2:
+		case JOB_LORD_KNIGHT:
+		case JOB_LORD_KNIGHT2:
+		case JOB_CRUSADER:
+		case JOB_CRUSADER2:
+		case JOB_PALADIN:
+		case JOB_PALADIN2:
+		case JOB_ROYAL_GUARD:
+		case JOB_ROYAL_GUARD_T:
+			sd->sc.option = (sd->sc.option | OPTION_RIDING);
+			break;
+		case JOB_RUNE_KNIGHT:
+		case JOB_RUNE_KNIGHT_T:
+			sd->sc.option = (sd->sc.option | OPTION_DRAGON1);
+			break;
+		default:
+			break;
+	}
 	sd->base_status.mode   = (e_mode)(sd->base_status.mode   | MD_CANMOVE | MD_CANATTACK);
 	sd->battle_status.mode = (e_mode)(sd->battle_status.mode | MD_CANMOVE | MD_CANATTACK);
 	if (p->speed > 0) {
@@ -661,6 +689,24 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 	WFIFOHEAD(char_fd, sizeof(p));
 	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
 	WFIFOSET(char_fd, sizeof(p));
+
+	// Phase 6.2 — push the merc's HP to the owner on every report so the
+	// party widget keeps showing real values across map zones, area
+	// transitions, and other moments where the AREA_WOS broadcast misses.
+	// SP isn't tracked in the party UI so we skip that.
+	if (sd->status.party_id != 0) {
+		struct party_data* pd = party_search(sd->status.party_id);
+		if (pd != nullptr) {
+			for (int32 i = 0; i < MAX_PARTY; i++) {
+				map_session_data* osd = pd->data[i].sd;
+				if (osd == nullptr || osd == sd) continue;
+				if (aishell_is_shell(osd->status.account_id)) continue;
+				clif_hpmeter_single(*osd, sd->id,
+					(uint32)sd->battle_status.hp,
+					(uint32)sd->battle_status.max_hp);
+			}
+		}
+	}
 }
 
 static TIMER_FUNC(aichrif_report_timer){
@@ -683,8 +729,17 @@ static int32 aichrif_handle_spawn(int32 fd){
 	// party UI (heal targets work via account_id either way).
 	if (sd != nullptr && p->owner_aid != 0) {
 		map_session_data* osd = map_id2sd((int32)p->owner_aid);
-		if (osd != nullptr && osd->status.party_id != 0)
+		if (osd != nullptr && osd->status.party_id != 0) {
 			party_add_aishell(*sd, osd->status.party_id);
+			// Phase 6.2 — party_add_aishell broadcasts the merc's HP via
+			// clif_party_hp(PARTY_AREA_WOS), but the owner's client doesn't
+			// always render the HP bar from that initial broadcast (party
+			// widget tends to wait for a per-target hp packet). Push one
+			// directly to the owner now so the bar starts at full HP
+			// instead of 0% until first damage.
+			clif_hpmeter_single(*osd, sd->id,
+				(uint32)sd->battle_status.hp, (uint32)sd->battle_status.max_hp);
+		}
 	}
 	aichrif_send_spawned_ack(p->shell_id, sd != nullptr, sd != nullptr ? 0 : 1);
 	return 1;
@@ -805,6 +860,25 @@ static int32 aichrif_handle_cmd(int32 fd){
 				break;
 			}
 			clif_spawn(sd);
+			// Phase 6.2 — re-push HP/xy to party after warp. The party UI
+			// state is preserved server-side, but the owner's client drops
+			// the merc's HP bar to 0% when changing maps until a new
+			// per-target HP packet arrives. Mirror what we do at spawn.
+			if (sd->status.party_id != 0) {
+				struct party_data* pd = party_search(sd->status.party_id);
+				if (pd != nullptr) {
+					for (int32 i = 0; i < MAX_PARTY; i++) {
+						map_session_data* osd = pd->data[i].sd;
+						if (osd == nullptr || osd == sd) continue;
+						if (aishell_is_shell(osd->status.account_id)) continue;
+						clif_hpmeter_single(*osd, sd->id,
+							(uint32)sd->battle_status.hp,
+							(uint32)sd->battle_status.max_hp);
+					}
+				}
+				clif_party_hp(*sd);
+				clif_party_xy(*sd);
+			}
 			ShowStatus("aichrif: WARP shell %u DONE on %s(%d,%d)\n",
 				hdr->shell_id, nm, dx, dy);
 			break;
