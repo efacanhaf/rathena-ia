@@ -1,10 +1,24 @@
 //===== DimensionsRO ==========================================
-//= Economy Hooks — daily Cash bonus.
+//= Economy Hooks — daily Cash bonus + orphan merc restore.
 //===== Description: ==========================================
 //= 1. OnPCLoginEvent: +2 Cash no primeiro login do dia.
 //=    Storage: #DRO_DAILY_CASH_LAST$ (key "AAAA-DDD" do dia do ano).
 //=    Account-scoped — soh um char por conta ganha por dia, simulado
 //=    pelo fato de #CASHPOINTS ser conta-wide.
+//=
+//= 2. OnPCLoginEvent: restore automatico de Aventureiro orfao.
+//=    Quando o ai-server reinicia, todos os shells em memoria
+//=    morrem. O char ainda tem ADV_HIRED_UNTIL > now mas a IA nao.
+//=    Esse hook detecta orfaos no login e re-emite @hire com o
+//=    tempo restante (preferencia: restore > refund, player nao
+//=    perde companhia). Atualiza hired_at = now no contrato pra
+//=    nao re-disparar restore se nao houve novo crash.
+//=
+//=    Pre-condicao: player em party (requisito do @hire). Se nao
+//=    estiver, mostra mensagem e mantem o contrato — restore pode
+//=    rodar no proximo login OU pelo NPC Treinador.
+//=
+//=    Marker pra orfao: $dro_ai_boot_ts > hired_at do contrato.
 //=
 //= O contador de MVP -> Nyangvine (100 kills = 1 Nyan) ESTAVA aqui
 //= como OnNPCKillEvent, mas migrou pra um hook C++ direto em
@@ -32,5 +46,46 @@ OnPCLoginEvent:
 		#DRO_DAILY_CASH_LAST$ = .@today$;
 		dispbottom "[DimensionsRO] +2 Cash de bonus diario. Saldo: " + (#CASHPOINTS) + " Cash.";
 	}
+
+	// Orphan merc restore.
+	if (ADV_HIRED_UNTIL <= gettimetick(2)) end;
+
+	query_sql("SELECT role, job, tier, base_level, job_level, hired_at, expires_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
+		.@role, .@job, .@tier, .@blvl, .@jlvl, .@hired_at, .@expires_at);
+	if (getarraysize(.@role) == 0) {
+		// ADV_HIRED_UNTIL setado mas nenhuma linha — hire pre-persistencia.
+		// Limpa o estado pra player nao ficar travado.
+		ADV_HIRED_UNTIL = 0;
+		end;
+	}
+
+	// Orfao se ai-server bootou *depois* do hire.
+	if ($dro_ai_boot_ts <= 0 || $dro_ai_boot_ts <= .@hired_at[0]) end;
+
+	.@now_ts = gettimetick(2);
+	.@remaining_sec = .@expires_at[0] - .@now_ts;
+	if (.@remaining_sec <= 0) {
+		// Contrato expirou durante o downtime. Sem restore, sem refund —
+		// player ja teve o tempo pago.
+		query_sql("DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0));
+		ADV_HIRED_UNTIL = 0;
+		end;
+	}
+
+	// @hire exige party. Se nao tem, deixa pendente — proximo login ou
+	// visita ao Treinador resolve.
+	if (getcharid(1) == 0) {
+		dispbottom "[DimensionsRO] Aventureiro perdido em uma reinicializacao. Entre em uma party e relogue (ou visite o Treinador) para restaura-lo.";
+		end;
+	}
+
+	.@remaining_min = (.@remaining_sec + 59) / 60;
+	atcommand "@hire " + .@job[0] + " " + .@tier[0] + " " + .@remaining_min + " " + .@blvl[0] + " " + .@jlvl[0] + " " + .@role[0];
+
+	// Atualiza hired_at pra nao re-disparar orphan no proximo login se
+	// o ai-server nao crashou de novo. duration_min reflete o tempo que
+	// efetivamente sobrou do contrato.
+	query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0));
+	dispbottom "[DimensionsRO] Aventureiro restaurado apos reinicializacao (" + .@remaining_min + " min restantes).";
 	end;
 }

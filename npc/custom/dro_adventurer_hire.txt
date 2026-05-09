@@ -23,68 +23,71 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	mes "Ola, aventureiro. Veio buscar um companheiro de jornada?";
 	mes " ";
 
-	// Already hired? Offer dispense path.
+	// Already hired? Detect orphan first to offer the right menu.
 	if (ADV_HIRED_UNTIL > gettimetick(2)) {
 		.@left = (ADV_HIRED_UNTIL - gettimetick(2)) / 60 + 1;
+
+		.@orphan = 0;
+		query_sql "SELECT role, job, tier, base_level, job_level, hired_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
+			.@c_role, .@c_job, .@c_tier, .@c_blvl, .@c_jlvl, .@c_hired_at;
+		if (getarraysize(.@c_role) > 0 && $dro_ai_boot_ts > 0 && $dro_ai_boot_ts > .@c_hired_at[0])
+			.@orphan = 1;
+
 		mes "Voce ainda tem um Aventureiro contratado.";
 		mes "Restam ^0000FF" + .@left + " minuto(s)^000000.";
-		next;
-		.@op = select(
-			"Dispensar agora (encerra o contrato)",
-			"Voltar"
-		);
-		if (.@op == 2) close;
-
-		// Pull the contract so we can compute refund pro-rata when the
-		// shell is orphaned (ai-server lost it).
-		.@orphan = 0;
-		.@refund_zeny = 0;
-		.@refund_voucher = 0;
-		query_sql "SELECT paid_zeny, paid_voucher, hired_at, duration_min FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
-			.@paid_zeny, .@paid_voucher, .@hired_at, .@duration_min;
-
-		if (getarraysize(.@paid_zeny) > 0) {
-			// Orphan check: if ai-server has been restarted since hired_at,
-			// the in-memory shell is gone. We track ai-server boot time in
-			// $dro_ai_boot_ts (set by map-server on AI handshake; mapreg).
-			if ($dro_ai_boot_ts > 0 && $dro_ai_boot_ts > .@hired_at[0]) {
-				.@orphan = 1;
-				.@total = .@duration_min[0] * 60;
-				.@elapsed = gettimetick(2) - .@hired_at[0];
-				if (.@elapsed < 0) .@elapsed = 0;
-				.@remaining = .@total - .@elapsed;
-				if (.@remaining < 0) .@remaining = 0;
-				if (.@total > 0) {
-					.@refund_zeny = .@paid_zeny[0] * .@remaining / .@total;
-					.@refund_voucher = (.@paid_voucher[0] && .@remaining > .@total / 2) ? 1 : 0;
-				}
-			}
-		}
-
-		mes "[Treinador de Aventureiros]";
 		if (.@orphan) {
-			mes "Verifico aqui... seu Aventureiro foi perdido por uma falha do servidor.";
-			if (.@refund_zeny > 0) {
-				mes "Devolvo ^0000FF" + .@refund_zeny + "z^000000 (proporcional ao tempo restante).";
-				Zeny += .@refund_zeny;
-			}
-			if (.@refund_voucher) {
-				mes "Devolvo tambem o ^990099Voucher de Aventureiro^000000 (mais da metade do tempo restava).";
-				getitem 1270150, 1;
-			}
-			if (!.@refund_zeny && !.@refund_voucher) {
-				mes "Nao havia tempo restante o suficiente pra reembolsar nada.";
+			mes " ";
+			mes "^FF0000Detectei que ele foi perdido em uma reinicializacao do servidor.^000000";
+			mes "Posso restaurar agora se voce quiser.";
+		}
+		next;
+
+		if (.@orphan) {
+			.@op = select(
+				"Restaurar Aventureiro agora",
+				"Dispensar (encerra o contrato sem reembolso)",
+				"Voltar"
+			);
+			if (.@op == 3) close;
+
+			if (.@op == 1) {
+				if (getcharid(1) == 0) {
+					mes "[Treinador de Aventureiros]";
+					mes "Voce precisa estar em uma ^FF0000party^000000 para eu trazer ele de volta.";
+					mes "Crie uma party e fale comigo de novo.";
+					close;
+				}
+				.@now_ts = gettimetick(2);
+				.@remaining_sec = ADV_HIRED_UNTIL - .@now_ts;
+				if (.@remaining_sec <= 0) {
+					mes "[Treinador de Aventureiros]";
+					mes "Hm, o tempo acabou enquanto conversavamos. Foi-se o contrato.";
+					query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0);
+					ADV_HIRED_UNTIL = 0;
+					close;
+				}
+				.@remaining_min = (.@remaining_sec + 59) / 60;
+				atcommand "@hire " + .@c_job[0] + " " + .@c_tier[0] + " " + .@remaining_min + " " + .@c_blvl[0] + " " + .@c_jlvl[0] + " " + .@c_role[0];
+				query_sql "UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0);
+				mes "[Treinador de Aventureiros]";
+				mes "Restaurado! Restam ^0000FF" + .@remaining_min + " minuto(s)^000000.";
+				close;
 			}
 		} else {
-			mes "Combinado, vou dispensar o Aventureiro.";
+			.@op = select(
+				"Dispensar agora (encerra o contrato)",
+				"Voltar"
+			);
+			if (.@op == 2) close;
 		}
 
-		// Reset state regardless: contract row + ADV_HIRED_UNTIL + ai-server.
+		// Dispense path (sem refund — restore foi a oferta).
 		query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0);
 		ADV_HIRED_UNTIL = 0;
 		atcommand "@dismiss";
-		mes " ";
-		mes "Pronto. Pode contratar de novo quando quiser.";
+		mes "[Treinador de Aventureiros]";
+		mes "Combinado, dispensei o Aventureiro.";
+		mes "Pode contratar de novo quando quiser.";
 		close;
 	}
 

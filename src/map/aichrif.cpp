@@ -126,17 +126,103 @@ static void aichrif_send_pong(int32 fd, uint32 token){
 	WFIFOSET(fd, 8);
 }
 
+/// Phase 6.2 — silent merc restore on ai-server reboot.
+///
+/// When ai-server crashes/restarts, every shell in g_shells_local dies but
+/// dro_merc_contracts persists. For every online char with an active
+/// contract we re-emit the same HIRE_REQUEST that the @hire atcommand
+/// would, with the duration shrunk to the time still remaining. ai-server
+/// spawns the merc fresh — runtime state (HP, buffs, position relative to
+/// the owner) is gone, but the contract identity (job/tier/level/role/
+/// expiry) is preserved so the player picks up where they left off
+/// without a relog or NPC visit.
+///
+/// Invariants:
+///  - Only fires for chars with party (aichrif_send_hire path needs it).
+///  - Contracts whose expiry already passed during downtime are deleted.
+///  - hired_at is updated to now so a future *normal* login does NOT
+///    re-trigger the script-side orphan check.
+static int32 aichrif_restore_callback(map_session_data* sd, va_list ap){
+	(void)ap;
+	if (sd == nullptr) return 0;
+	int64 hu_key = add_str("ADV_HIRED_UNTIL");
+	int64 hired_until = pc_readglobalreg(sd, hu_key);
+	if (hired_until <= time(nullptr)) return 0;
+	if (sd->status.party_id == 0) return 0;
+
+	uint32 cid = (uint32)sd->status.char_id;
+	if (SQL_ERROR == Sql_Query(mmysql_handle,
+			"SELECT role, job, tier, base_level, job_level, expires_at "
+			"FROM dro_merc_contracts WHERE char_id = %u",
+			cid)) {
+		Sql_ShowDebug(mmysql_handle);
+		return 0;
+	}
+	if (SQL_SUCCESS != Sql_NextRow(mmysql_handle)) {
+		Sql_FreeResult(mmysql_handle);
+		return 0;
+	}
+	char* col_role; char* col_job; char* col_tier;
+	char* col_blvl; char* col_jlvl; char* col_expires;
+	Sql_GetData(mmysql_handle, 0, &col_role,    nullptr);
+	Sql_GetData(mmysql_handle, 1, &col_job,     nullptr);
+	Sql_GetData(mmysql_handle, 2, &col_tier,    nullptr);
+	Sql_GetData(mmysql_handle, 3, &col_blvl,    nullptr);
+	Sql_GetData(mmysql_handle, 4, &col_jlvl,    nullptr);
+	Sql_GetData(mmysql_handle, 5, &col_expires, nullptr);
+	uint8  role  = (uint8) atoi(col_role);
+	uint16 job   = (uint16)atoi(col_job);
+	uint8  tier  = (uint8) atoi(col_tier);
+	uint16 blvl  = (uint16)atoi(col_blvl);
+	uint16 jlvl  = (uint16)atoi(col_jlvl);
+	time_t expires_at = (time_t)atoll(col_expires);
+	Sql_FreeResult(mmysql_handle);
+
+	time_t now = time(nullptr);
+	int32 remaining_sec = (int32)(expires_at - now);
+	if (remaining_sec <= 0) {
+		Sql_Query(mmysql_handle,
+			"DELETE FROM dro_merc_contracts WHERE char_id = %u", cid);
+		pc_setglobalreg(sd, hu_key, 0);
+		return 0;
+	}
+	int32 remaining_min = (remaining_sec + 59) / 60;
+	const char* mname = mapindex_id2name(sd->mapindex);
+	if (mname == nullptr) return 0;
+	if (aichrif_send_hire(
+			(uint32)sd->status.account_id, cid, job, tier,
+			mname, (uint16)sd->x, (uint16)sd->y,
+			(uint32)remaining_min * 60u * 1000u,
+			blvl, jlvl, role) != 0)
+		return 0;
+	Sql_Query(mmysql_handle,
+		"UPDATE dro_merc_contracts SET hired_at = %lld, duration_min = %d "
+		"WHERE char_id = %u",
+		(long long)now, remaining_min, cid);
+	pc_setglobalreg(sd, hu_key, (int64)expires_at);
+	clif_displaymessage(sd->fd,
+		"[DimensionsRO] Aventureiro restaurado apos reinicializacao do servidor.");
+	return 1;
+}
+
+static void aichrif_restore_online_mercs(void){
+	map_foreachpc(aichrif_restore_callback);
+}
+
 /// Handle PACKET_AI_PING { len:W=8, token:L }. Phase 1.1 smoke test only.
 static int32 aichrif_handle_ping(int32 fd){
 	uint32 token = RFIFOL(fd, 4);
 	ShowInfo("ai-server: ping received (token=%u). Sending pong.\n", token);
 	aichrif_send_pong(fd, token);
 	// Phase 6.2 — record ai-server boot moment in mapreg $dro_ai_boot_ts.
-	// token=1 is the first ping after startup; the NPC Treinador uses this
-	// timestamp to detect orphan contracts (hired_at < $dro_ai_boot_ts ->
-	// the merc state was lost in a crash) and refund pro-rata.
-	if (token == 1)
+	// token=1 is the first ping after startup; OnPCLoginEvent and the
+	// Treinador NPC use this to detect orphan contracts on subsequent
+	// logins / NPC visits. We also kick off a restore pass for chars
+	// already online RIGHT NOW so they don't have to relog.
+	if (token == 1) {
 		mapreg_setreg(reference_uid(add_str("$dro_ai_boot_ts"), 0), (int)time(nullptr));
+		aichrif_restore_online_mercs();
+	}
 	return 1;
 }
 
