@@ -8,6 +8,7 @@
 //=
 //=   Booster Coin -> Nyan         (50:1, cap 5/semana)
 //=   Nyan         -> Cash         (1:10, sem cap)
+//=   Nyan         -> Nyan Cupon   (1:1, sem cap)
 //=
 //= Conversoes BLOQUEADAS (anti-P2W):
 //=   Cash -> qualquer moeda
@@ -17,6 +18,7 @@
 //= Storage:
 //=   Cash         -> #CASHPOINTS  (account-scoped scalar)
 //=   Nyan         -> item 6909 (Nyangvine_Fruit)
+//=   Nyan Cupon   -> item 7000 (Evt_Cos_Coin)
 //=   Booster Coin -> item 1000254 (Booster_Coin)
 //=
 //= Cap semanal BC->Nyan:
@@ -51,10 +53,11 @@ prontera,166,290,5	script	Cambista#dro	4_M_03,{
 		#DRO_BC_NYAN_WEEK_KEY$ = .@key$;
 	}
 
-	switch (select("Trocar Booster Coin por Nyangvine (50 BC = 1 Nyangvine):Trocar Nyangvine por Cash (1 Nyangvine = 10 Cash):Sair")) {
+	switch (select("Trocar Booster Coin por Nyangvine (50 BC = 1 Nyangvine):Trocar Nyangvine por Cash (1 Nyangvine = 10 Cash):Trocar Nyangvine por Nyan Cupon (1 Nyangvine = 1 Cupon):Sair")) {
 	case 1: callsub L_bc_to_nyan; break;
 	case 2: callsub L_nyan_to_cash; break;
-	case 3: close;
+	case 3: callsub L_nyan_to_cupon; break;
+	case 4: close;
 	}
 	close;
 
@@ -143,5 +146,40 @@ L_nyan_to_cash:
 	#CASHPOINTS += .@gain;
 	mes "[Cambista]";
 	mes "Pronto. ^4d4dff-" + .@qty + " Nyangvine, +" + .@gain + " Cash^000000. Saldo: " + (#CASHPOINTS) + " Cash.";
+	return;
+
+// ---------------------------------------------------------------
+// Nyangvine -> Nyan Cupon (1:1, sem cap)
+// ---------------------------------------------------------------
+L_nyan_to_cupon:
+	mes "[Cambista]";
+	mes "Quantas ^4d4dffNyangvines^000000 voce quer trocar por Nyan Cupon?";
+	mes "Cada Nyangvine vale ^4d4dff1 Nyan Cupon^000000.";
+	mes "Voce tem ^4d4dff" + countitem(6909) + " Nyangvine(s)^000000.";
+	next;
+	input .@qty;
+	if (.@qty <= 0) {
+		mes "[Cambista]";
+		mes "Quantidade invalida.";
+		return;
+	}
+	if (countitem(6909) < .@qty) {
+		mes "[Cambista]";
+		mes "Voce nao tem Nyangvines suficientes.";
+		return;
+	}
+	mes "[Cambista]";
+	mes "Voce vai trocar ^4d4dff" + .@qty + " Nyangvine(s)^000000 por ^4d4dff" + .@qty + " Nyan Cupon^000000.";
+	mes "Confirma?";
+	next;
+	if (select("Sim, trocar:Cancelar") == 2) {
+		mes "[Cambista]";
+		mes "Como desejar.";
+		return;
+	}
+	delitem 6909, .@qty;
+	getitem 7000, .@qty;
+	mes "[Cambista]";
+	mes "Pronto. ^4d4dff-" + .@qty + " Nyangvine, +" + .@qty + " Nyan Cupon^000000.";
 	return;
 }
