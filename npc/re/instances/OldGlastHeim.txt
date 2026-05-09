@@ -19,6 +19,8 @@
 //= 1.6 Cleaned up the dialogue. [Aleos]
 //= 1.7 Implemented fast mode. [Atemo]
 //      Note: The treasure room is not accessible in fast mode.
+//= 1.8 Unofficial Old Glastheim Advanced Mode [llchrisll]
+//      Updated Script to reflect recent changes from rAthena [llchrisll]
 //============================================================
 
 glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
@@ -77,14 +79,37 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 		mes "Umm? Did you see me at another place? I don't think so. What about this time?";
 		if (isbegin_quest(12322) == 1)
 			erasequest 12322;
+		if (isbegin_quest(12335) == 1)
+			erasequest 12335;
 	}
 	next;
-	switch( checkquest(12317,PLAYTIME) ) {
+	mes "[Hugin]";
+	mes "Which mode do you want to enter?";
+	next;
+	set .@diff,select("Normal Mode:Hard Mode");
+	if(.@diff == 1)
+		setarray .@quest_id[0],12317,12318;
+	else if(.@diff == 2) {
+		if (BaseLevel < 160) {
+			mes "[Hugin]";
+			mes "Why don't you come back after becoming stronger?";
+			mes "Maybe, level 160.";
+			close;
+		}
+		setarray .@quest_id[0],12334,12336;
+	}
+	if(isbegin_quest(.@quest_id[1]) == 1)
+		erasequest .@quest_id[1];
+	
+	switch( checkquest(.@quest_id[0],PLAYTIME) ) {
 	case -1:
 		.@party_id = getcharid(1);
 		.@p_name$ = getpartyname(.@party_id);
-		.@md_name$ = "Old Glast Heim";
-
+		if(.@diff == 1)
+			.@md_name$ = "Old Glast Heim";
+		else if(.@diff == 2)
+			.@md_name$ = "Old Glast Heim Advanced";
+				
 		if (!instance_check_party(.@party_id)) {
 			mes "[Hugin]";
 			mes "Why don't you make a party with more than 1 person and talk to me again?";
@@ -96,13 +121,19 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 			mes "[Hugin]";
 			mes "Have we met before? No way. It's my first time seeing you. What do you want?";
 		}
-		if (isbegin_quest(12318) == 0)
-			setquest 12318;// Corrupted Soul Hunt
-		switch( select( .@menu$, "Enter Old Glast Heim", "Cancel" ) ) {
+		if(.@diff == 2 && !OGH_Norm) {
+			mes "[Hugin]";
+			mes "I'm sorry, but you are not ready for this Time Gap yet.";
+			mes "Please try the Normal Mode first, before entering the Hard Mode.";
+			close;
+		}
+		if (isbegin_quest(.@quest_id[1]) == 0)
+			setquest .@quest_id[1]; // Corrupted Soul Hunt
+		switch( select( .@menu$, "Enter "+.@md_name$, "Cancel" ) ) {
 		case 1:
 			switch( instance_create(.@md_name$) ) {
 			case -3:
-				dispbottom "Memorial Dungeon, 'Old Glast Heim' is already in progress.",0xFFFFFF;
+				dispbottom "Memorial Dungeon, '"+.@md_name$+"' is already in progress.",0xFFFFFF;
 				close;
 			case -4:
 			case -2:
@@ -114,6 +145,7 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 			}
 			mes "[Hugin]";
 			mes "After the time gap opens, please tell me again.";
+			set @OGH_Mode,.@diff;
 			close;
 		case 2:
 			switch( instance_enter(.@md_name$) ) {
@@ -131,7 +163,7 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 				close;
 			case IE_OK:
 				mapannounce "glast_01", "" + getpartyname( getcharid(1) ) + " party member " + strcharinfo(0) + " enters the " + .@md_name$ + ".", bc_map,0x00FF99;
-				setquest 12317;// Trace of Time Travel
+				setquest .@quest_id[0];// Trace of Time Travel
 				// warp "1@gl_k",150,20;
 				end;
 			}
@@ -149,9 +181,121 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 		close;
 	case 2:
 		mes "^0000ffAll traces of access to Old Glast Heim have been removed. Now you can talk with Hugin again.^000000";
-		if (isbegin_quest(12318) == 0)
-			setquest 12318;// Corrupted Soul Hunt
-		erasequest 12317;
+		if (isbegin_quest(.@quest_id[1]) == 0)
+			setquest .@quest_id[1];// Corrupted Soul Hunt
+		erasequest .@quest_id[0];
+		close;
+	}
+}
+
+// Another Hugin — Advanced mode entrance only.
+// Pre-locks @OGH_Mode to 2 so the Hard mode flow is selected.
+// Requires Lv 160 + completed Normal mode at least once (OGH_Norm).
+// Coordinates per iRO Wiki: glast_01 179/283.
+glast_01,179,283,5	script	Another Hugin	4_M_SAGE_C,{
+	if (BaseLevel < 160) {
+		mes "[Another Hugin]";
+		mes "Why don't you come back after becoming stronger?";
+		mes "Maybe, level 160.";
+		close;
+	}
+	if (!OGH_Norm) {
+		mes "[Another Hugin]";
+		mes "I'm sorry, but you are not ready for this Time Gap yet.";
+		mes "Please clear ^0000ffOld Glast Heim^000000 (Normal) first, and then come back to me.";
+		close;
+	}
+	mes "[Another Hugin]";
+	mes "Hmm... you've been in this place before, haven't you?";
+	next;
+	mes "[Another Hugin]";
+	mes "I can sense it. The threads of time around you are tangled — you've already crossed over once.";
+	next;
+	mes "[Another Hugin]";
+	mes "Are you ready to face a deeper, darker corruption?";
+	next;
+	if (select("Not yet.","Yes, take me there.") == 1) {
+		mes "[Another Hugin]";
+		mes "Take your time. The shadows aren't going anywhere.";
+		close;
+	}
+
+	setarray .@quest_id[0],12334,12336;
+	if (isbegin_quest(.@quest_id[1]) == 1)
+		erasequest .@quest_id[1];
+
+	switch (checkquest(.@quest_id[0],PLAYTIME)) {
+	case -1:
+		.@party_id = getcharid(1);
+		.@p_name$ = getpartyname(.@party_id);
+		.@md_name$ = "Old Glast Heim Advanced";
+		if (!instance_check_party(.@party_id)) {
+			mes "[Another Hugin]";
+			mes "Why don't you make a party with more than 1 person and talk to me again?";
+			close;
+		}
+		if (is_party_leader() == true)
+			.@menu$ = "Generate Time Gap";
+		else {
+			mes "[Another Hugin]";
+			mes "Have we met before? No way. It's my first time seeing you. What do you want?";
+		}
+		if (isbegin_quest(.@quest_id[1]) == 0)
+			setquest .@quest_id[1]; // Corrupted Soul Hunt
+		switch (select(.@menu$, "Enter "+.@md_name$, "Cancel")) {
+		case 1:
+			switch (instance_create(.@md_name$)) {
+			case -3:
+				dispbottom "Memorial Dungeon, '"+.@md_name$+"' is already in progress.",0xFFFFFF;
+				close;
+			case -4:
+			case -2:
+			case -1:
+				mes "Party Name: " + getpartyname(getcharid(1));
+				mes "Party Leader: " + strcharinfo(0);
+				mes "^0000ff" + .@md_name$ + "^000000 - time gap generation failed.";
+				close;
+			}
+			mes "[Another Hugin]";
+			mes "After the time gap opens, please tell me again.";
+			set @OGH_Mode,2;
+			close;
+		case 2:
+			switch (instance_enter(.@md_name$)) {
+			case IE_OTHER:
+				mes "[Another Hugin]";
+				mes "An unknown error has occurred.";
+				close;
+			case IE_NOINSTANCE:
+				mes "[Another Hugin]";
+				mes "The time gap is not yet open.";
+				close;
+			case IE_NOMEMBER:
+				mes "[Another Hugin]";
+				mes "Your body is not fit to enter the time gap. You won't be able to get in if you're not in a party.";
+				close;
+			case IE_OK:
+				mapannounce "glast_01", "" + getpartyname(getcharid(1)) + " party member " + strcharinfo(0) + " enters the " + .@md_name$ + ".", bc_map,0x00FF99;
+				setquest .@quest_id[0]; // Trace of Time Travel
+				end;
+			}
+		case 3:
+			close;
+		}
+	case 0:
+	case 1:
+		mes "[Another Hugin]";
+		mes "Oh, my...";
+		mes "You still have after-effects of time travel. You can't travel again with this condition.";
+		next;
+		mes "[Another Hugin]";
+		mes "Staying healthy is important, so please take a break and come back again later.";
+		close;
+	case 2:
+		mes "^0000ffAll traces of access to Old Glast Heim Advanced have been removed. Now you can talk with Hugin again.^000000";
+		if (isbegin_quest(.@quest_id[1]) == 0)
+			setquest .@quest_id[1]; // Corrupted Soul Hunt
+		erasequest .@quest_id[0];
 		close;
 	}
 }
@@ -163,7 +307,7 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 1@gl_k,206,79,0	warp	#3Control2	2,2,1@gl_k,195,79
 1@gl_k,227,216,0	warp	#4Control	2,2,1@gl_k,215,216
 1@gl_k,222,216,0	warp	#4Control2	2,2,1@gl_k,233,216
-// 1@gl_k,150,284,0	warp	#2F Entrance	2,2,2@gl_k,150,46
+1@gl_k,150,284,0	warp	#2F Entrance	2,2,2@gl_k,150,46
 2@gl_k,149,32,0	warp	#1 Control	2,2,1@gl_k,150,270
 2@gl_k,145,123,0	warp	#22 Control	2,2,2@gl_k,126,123
 2@gl_k,136,122,0	warp	#22 Control2	2,2,2@gl_k,150,116
@@ -188,8 +332,8 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 		next;
 		if (select( "Omit moderately.", "Appreciate everything." ) == 1) {
 			cutin "GL_BARMUND1.bmp",2;
-			mes "[Varmundt]";
-			mes "I've seen you, " + strcharinfo(0) + ".";
+			mes "[Barmund]";
+			mes "Have I seen you " + strcharinfo(0) + "";
 			mes "I'm sure I can trust you. Let's leave right away.";
 			close2;
 			cutin "",255;
@@ -206,6 +350,8 @@ glast_01,204,273,5	script	Hugin	4_M_SAGE_C,{
 	}
 	.@account_id = getcharid(3);
 	.@player_name$ = strcharinfo(0);
+	set 'OGH_Mode,@OGH_Mode;
+	
 	mes "[Varmundt]";
 	mes "Are you the one ^0000ffHerico^000000 sent to help me?";
 	npctalk "Varmundt: Are you the one Herico sent to help me?";
@@ -498,40 +644,45 @@ OnTimer92000:
 	hideonnpc instance_npcname("Khalitzburg Knightage#22");
 
 	.@label$ = instance_npcname("#talkinstance1") + "::OnMyMobDead";
-	monster 'map_name$[0],145,59,"Abysmal Knight",2470,1,.@label$;// MG_KNIGHT_OF_ABYSS
-	monster 'map_name$[0],154,59,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],145,69,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],154,69,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],145,79,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],154,79,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],145,89,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],154,89,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],145,99,"Abysmal Knight",2470,1,.@label$;
-	monster 'map_name$[0],154,99,"Abysmal Knight",2470,1,.@label$;
+	
+	if('OGH_Mode == 1)  // Normal Mode
+		setarray .@mob_id[0],2470,2471;
+	else if('OGH_Mode == 2) // Hard Mode
+		setarray .@mob_id[0],3145,3146;
+	monster 'map_name$[0],145,59,"Abysmal Knight",.@mob_id[0],1,.@label$;// MG_KNIGHT_OF_ABYSS
+	monster 'map_name$[0],154,59,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],145,69,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],154,69,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],145,79,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],154,79,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],145,89,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],154,89,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],145,99,"Abysmal Knight",.@mob_id[0],1,.@label$;
+	monster 'map_name$[0],154,99,"Abysmal Knight",.@mob_id[0],1,.@label$;
 
-	monster 'map_name$[0],145,54,"Khalitzburg",2471,1,.@label$;// G_MG_KHALITZBURG
+	monster 'map_name$[0],145,54,"Khalitzburg",.@mob_id[1],1,.@label$;// G_MG_KHALITZBURG
 	unittalk $@mobid[0],"Water... Someone give me water...";
-	monster 'map_name$[0],154,54,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],154,54,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Kkkrrrruughgh...";
-	monster 'map_name$[0],145,64,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],145,64,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Sir Heinrich. Save me...";
-	monster 'map_name$[0],154,64,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],154,64,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"I miss my sister...";
-	monster 'map_name$[0],145,74,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],145,74,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Don't leave me alone, help me.";
-	monster 'map_name$[0],154,74,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],154,74,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Aaarrrrrhhhh";
-	monster 'map_name$[0],145,84,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],145,84,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"I am so thirsty.";
-	monster 'map_name$[0],154,84,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],154,84,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Oh...No...I can't die yet...";
-	monster 'map_name$[0],145,94,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],145,94,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"I feel sick to my stomach urrgg";
-	monster 'map_name$[0],154,94,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],154,94,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Can someone...";
-	monster 'map_name$[0],145,104,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],145,104,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"Arrgg... My body";
-	monster 'map_name$[0],154,104,"Khalitzburg",2471,1,.@label$;
+	monster 'map_name$[0],154,104,"Khalitzburg",.@mob_id[1],1,.@label$;
 	unittalk $@mobid[0],"My throat is burning!";
 	end;
 OnTimer94000:
@@ -836,11 +987,17 @@ OnStart:
 
 	// note: x17 MG_GHOUL / x17 MG_ZOMBIE / x17 MG_WRAITH
 	.@label$ = instance_npcname("#ghmemorialmob01") + "::OnMyMobDead";
-	areamonster 'map_name$[0],76,99,87,10,"Grand Chamberlain in pain",2466,14,.@label$;
-	areamonster 'map_name$[0],67,39,12, 6,"Corrupted Monk",2465,17,.@label$;
-	areamonster 'map_name$[0],67,39,12, 6,"Grand Chamberlain in pain",2466,3,.@label$;
-	areamonster 'map_name$[0],32,75,51,58,"Corrupted Steward",2464,5,.@label$;
-	areamonster 'map_name$[0],45,84,6,137,"Corrupted Steward",2464,12,.@label$;
+	
+	if('OGH_Mode == 1) // Normal mode
+		setarray .@mob_id[0],2466,2465,2464;
+	else if('OGH_Mode == 2) // Hard Mode
+		setarray .@mob_id[0],3141,3140,3139;
+	
+	areamonster 'map_name$[0],76,99,87,10,"Grand Chamberlain in pain",.@mob_id[0],14,.@label$;
+	areamonster 'map_name$[0],67,39,12, 6,"Corrupted Monk",.@mob_id[1],17,.@label$;
+	areamonster 'map_name$[0],67,39,12, 6,"Grand Chamberlain in pain",.@mob_id[0],3,.@label$;
+	areamonster 'map_name$[0],32,75,51,58,"Corrupted Steward",.@mob_id[2],5,.@label$;
+	areamonster 'map_name$[0],45,84,6,137,"Corrupted Steward",.@mob_id[2],12,.@label$;
 	end;
 OnMyMobDead:
 	.@label$ = instance_npcname("#ghmemorialmob01") + "::OnMyMobDead";
@@ -918,10 +1075,16 @@ OnStart:
 
 	// note: x34 MG_ZOMBIE / x35 MG_GHOUL
 	.@label$ = instance_npcname("#ghmemorialmob02") + "::OnMyMobDead";
-	areamonster 'map_name$[0],236,12,288,52,"Outraged Refiner",2466,18,.@label$;// MG_GHOUL
-	areamonster 'map_name$[0],236,12,288,52,"Decomposed Blacksmith",2464,17,.@label$;// MG_ZOMBIE
-	areamonster 'map_name$[0],242,71,286,145,"Outraged Refiner",2466,17,.@label$;
-	areamonster 'map_name$[0],242,71,286,145,"Decomposed Blacksmith",2464,17,.@label$;
+	
+	if('OGH_Mode == 1) // Normal Mode
+		setarray .@mob_id[0],2466,2464;
+	else if('OGH_Mode == 2) // Hard Mode
+		setarray .@mob_id[0],3141,3139;
+	
+	areamonster 'map_name$[0],236,12,288,52,"Outraged Refiner",.@mob_id[0],18,.@label$;// MG_GHOUL
+	areamonster 'map_name$[0],236,12,288,52,"Decomposed Blacksmith",.@mob_id[1],17,.@label$;// MG_ZOMBIE
+	areamonster 'map_name$[0],242,71,286,145,"Outraged Refiner",.@mob_id[0],17,.@label$;
+	areamonster 'map_name$[0],242,71,286,145,"Decomposed Blacksmith",.@mob_id[1],17,.@label$;
 	end;
 OnMyMobDead:
 	.@label$ = instance_npcname("#ghmemorialmob02") + "::OnMyMobDead";
@@ -995,7 +1158,10 @@ OnTouch_:
 	else .@mobs = 7;
 	getmapxy .@map$,.@x,.@y, BL_NPC;
 	specialeffect EF_VENOMDUST;
-	monster .@map$,.@x,.@y,"Maggot",2467,.@mobs;
+	if('OGH_Mode == 1) // Normal Mode
+		monster .@map$,.@x,.@y,"Maggot",2467,.@mobs;
+	else if('OGH_Mode == 2) // Hard Mode
+		monster .@map$,.@x,.@y,"Maggot",3142,.@mobs;
 	disablenpc();
 	end;
 }
@@ -1037,12 +1203,17 @@ OnEnable:
 
 	// note: x50 MG_RAYDRIC / x50 MG_RAYDRIC_ARCHER
 	.@label$ = instance_npcname("#ghmemorialmob03") + "::OnMyMobDead";
-	areamonster 'map_name$[0],16,186,43,280,"Outraged Archer",2469,25,.@label$;
-	areamonster 'map_name$[0],44,191,89,225,"Hungry Palace Guard",2468,25,.@label$;
-	areamonster 'map_name$[0],115,215,188,273,"Corrupted Palace Guard",2468,20,.@label$;
-	areamonster 'map_name$[0],108,232,193,281,"Corrupted Palace Guard",2468,5,.@label$;
-	areamonster 'map_name$[0],158,236,230,250,"Wandering Archer",2469,12,.@label$;
-	areamonster 'map_name$[0],65,231,155,256,"Wandering Archer",2469,13,.@label$;
+	if('OGH_Mode == 1)  // Normal Mode
+		setarray .@mob_id[0],2469,2468;
+	else if('OGH_Mode == 2)  // Hard Mode
+		setarray .@mob_id[0],3144,3143;
+		
+	areamonster 'map_name$[0],16,186,43,280,"Outraged Archer",.@mob_id[0],25,.@label$;
+	areamonster 'map_name$[0],44,191,89,225,"Hungry Palace Guard",.@mob_id[1],25,.@label$;
+	areamonster 'map_name$[0],115,215,188,273,"Corrupted Palace Guard",.@mob_id[1],20,.@label$;
+	areamonster 'map_name$[0],108,232,193,281,"Corrupted Palace Guard",.@mob_id[1],5,.@label$;
+	areamonster 'map_name$[0],158,236,230,250,"Wandering Archer",.@mob_id[0],12,.@label$;
+	areamonster 'map_name$[0],65,231,155,256,"Wandering Archer",.@mob_id[0],13,.@label$;
 	end;
 OnMyMobDead:
 	.@label$ = instance_npcname("#ghmemorialmob03") + "::OnMyMobDead";
@@ -1073,31 +1244,38 @@ OnTimer5000:
 	close3;
 }
 
+// note: never hidden
 1@gl_k,156,258,3	script	Varmundt#2	4_M_BARMUND,{
-	if ('step < 6)
-		end;
-	if (checkweight(6607,1, 6608,1) == 0) {
-		mes "^ff0000It seems like you have too many types or weights of items. Please organize your inventory.^000000";
-		close;
-	}
 	cutin "gl_barmund1",2;
 	mes "[Varmundt]";
-	if (checkquest(12318,HUNTING) != 2) {
+	if('OGH_Mode == 1) {// Normal Mode
+		setarray .@quest_id[0],12318,12319,12320;
+		setarray .@exp[0],250000,250000;
+		setarray .@item[0],	6607,1, // Temporal_Crystal
+							6608,1; // Coagulated_Spell
+	} else  if('OGH_Mode == 2) { // Hard Mode
+		setarray .@quest_id[0],12336,12337,12338;
+		setarray .@exp[0],250000,250000;
+		setarray .@item[0],	6607,1, // Temporal_Crystal
+							6607,rand(1,4), // Extra Temporal_Crystal
+							6755,1; // Contaminated_Magic
+	}
+	if (checkquest(.@quest_id[0],HUNTING) != 2) {
 		mes "I guess this is it. Is it impossible to stop the time traveler's will?!";
 		mes "A portal seems to have appeared to the north.";
 		close3;
 	}
-	erasequest 12318;
-	if (isbegin_quest(12319) == 0)
-		setquest 12319;// Amdarais Hunt
-	if (isbegin_quest(12320) == 0) {
-		setquest 12320;// Time Traveler
-		completequest 12320;
-		getexp 250000,250000;
+	erasequest .@quest_id[0];
+	if (isbegin_quest(.@quest_id[1]) == 0)
+		setquest .@quest_id[1];// Amdarais Hunt
+	if (isbegin_quest(.@quest_id[2]) == 0) {
+		setquest .@quest_id[2];// Time Traveler
+		completequest .@quest_id[2];
+		getexp .@exp[0],.@exp[1];
 	}
 	mes "This item has an extraordinary aura with it. Can be very useful for someone special.";
-	getitem 6607,1;// Temporal_Crystal
-	getitem 6608,1;// Coagulated_Spell
+	for ( .@i = 0; .@i < getarraysize(.@item); .@i+=2)
+		getitem .@item[.@i],.@item[.@i+1];
 	close3;
 }
 
@@ -1206,7 +1384,10 @@ OnTimer14500:
 	end;
 OnStart:
 	enablenpc instance_npcname("#ghmemorialmob04");
-	monster 'map_name$[0],150,259,"Corrupted Soul",2475,1, instance_npcname("#ghmemorialmob04") + "::OnMyMobDead";// MG_CORRUPTION_ROOT
+	if('OGH_Mode == 1) // Normal Mode
+		monster 'map_name$[0],150,259,"Corrupted Soul",2475,1, instance_npcname("#ghmemorialmob04") + "::OnMyMobDead";// MG_CORRUPTION_ROOT
+	else if('OGH_Mode == 2) // Hard Mode
+		monster 'map_name$[0],150,259,"Corrupted Soul",3151,1, instance_npcname("#ghmemorialmob04") + "::OnMyMobDead";// MG_CORRUPTION_ROOT
 	unittalk $@mobid[0],"Grrrrrrhh~~~";
 	end;
 OnMyMobDead:
@@ -1221,21 +1402,7 @@ OnMyMobDead:
 		enablenpc instance_npcname("Varmundt#21");
 		donpcevent instance_npcname("#ghmemorialmob05") + "::OnStart";
 		disablenpc instance_npcname("#ghmemorialmob04");
-		'step = 6;
 	}
-	end;
-}
-
-1@gl_k,150,284,0	script	#2F Entrance	WARPNPC,2,2,{
-	end;
-OnTouch:
-	if (checkquest(12318,HUNTING) == 2) {
-		mes "^0000ffIt seems that you did not receive a reward for clearing the first floor. Talk to Varmundt and receive your reward.^000000";
-		close2;
-		warp 'map_name$[0],156,256;
-		end;
-	}
-	warp 'map_name$[1],150,46;
 	end;
 }
 
@@ -1265,9 +1432,9 @@ OnEffect:
 2@gl_k,150,66,0	script	#Servanton	HIDDEN_WARP_NPC,7,7,{
 	end;
 OnTouch_:
-	if ('step != 6)
+	if ('step != 5)
 		end;
-	'step = 7;
+	'step = 6;
 	disablenpc();
 	if ('mode == 1)
 		donpcevent instance_npcname("#talkinstance5") + "::OnStart";
@@ -1391,18 +1558,21 @@ OnTouch_:
 	disablenpc();
 	.@hidden_name$ = strnpcinfo(2);
 	.@event_type = atoi( charat(.@hidden_name$,4) );
-	.@event_number = atoi( charat(.@hidden_name$,6) );
 	if (.@event_type == 2)
-		.@event$ = instance_npcname("#ghmemorialmob05") + "::OnMyMobDead" + .@event_number;	// left side
+		.@label$ = instance_npcname("#ghmemorialmob05") + "::OnMyMobDead";
 	else
-		.@event$ = instance_npcname("#ghmemorialmob06") + "::OnMyMobDead" + .@event_number;	// right side
-	killmonster 'map_name$[1], .@event$;
+		.@label$ = instance_npcname("#ghmemorialmob06") + "::OnMyMobDead";
 	getmapxy .@map$,.@x,.@y, BL_NPC;
-	monster .@map$,.@x,.@y, "Corrupted Palace Guard", 2468,1, .@event$;
-	monster .@map$,.@x,.@y, "Archer of Death", 2469,1, .@event$;
-	monster .@map$,.@x,.@y, "Corrupted Abysmal Knight", 2470,1, .@event$;
-	monster .@map$,.@x,.@y, "Suffered Khalitzburg", 2471,1, .@event$;
-	monster .@map$,.@x,.@y, "Bloody Knight", 2472,1, .@event$;
+	if('OGH_Mode == 1) // Normal Mode
+		setarray .@mob_id[0],2468,2469,2470,2471,2472;
+	else if('OGH_Mode == 2) // Hard Mode
+		setarray .@mob_id[0],3143,3144,3145,3146,3147;
+		
+	monster .@map$,.@x,.@y, "Corrupted Palace Guard", .@mob_id[0],1, .@label$;
+	monster .@map$,.@x,.@y, "Archer of Death", .@mob_id[1],1, .@label$;
+	monster .@map$,.@x,.@y, "Corrupted Abysmal Knight", .@mob_id[2],1, .@label$;
+	monster .@map$,.@x,.@y, "Suffered Khalitzburg", .@mob_id[3],1, .@label$;
+	monster .@map$,.@x,.@y, "Bloody Knight", .@mob_id[4],1, .@label$;
 	initnpctimer;
 	end;
 OnTimer30000:
@@ -1438,13 +1608,7 @@ OnStart:
 		enablenpc instance_npcname("#ogh_2-" + .@i);
 	end;
 
-OnMyMobDead1:
-OnMyMobDead2:
-OnMyMobDead3:
-OnMyMobDead4:
-OnMyMobDead5:
-OnMyMobDead6:
-OnMyMobDead7:
+OnMyMobDead:
 	if (mobcount('map_name$[1], instance_npcname("#ghmemorialmob05") + "::OnBossDead") > 0)	// Prevent boss re-spawn
 		end;
 	if ('mode == 2)	// Higher (but unknown) spawn rate in fast mode
@@ -1457,7 +1621,10 @@ OnMyMobDead7:
 
 		.@r = rand(4) * 2;
 		setarray .@coord[0], 41,146, 58,44, 122,148, 131,64;
-		monster 'map_name$[1],.@coord[.@r],.@coord[.@r+1], "1st Commander of Destruction",2473,1, instance_npcname("#ghmemorialmob05") + "::OnBossDead";
+		if('OGH_Mode == 1) // Normal Mode
+			monster 'map_name$[1],.@coord[.@r],.@coord[.@r+1], "1st Commander of Destruction",2473,1, instance_npcname("#ghmemorialmob05") + "::OnBossDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			monster 'map_name$[1],.@coord[.@r],.@coord[.@r+1], "1st Commander of Destruction",3148,1, instance_npcname("#ghmemorialmob05") + "::OnBossDead";
 	}
 	end;
 
@@ -1472,9 +1639,7 @@ OnBossDead:
 	for ( .@i = 1; .@i <= 7; .@i++ )
 		donpcevent instance_npcname("#ogh_2-" + .@i) + "::OnStop";
 
-	.@npc_name$ = instance_npcname("#ghmemorialmob05");
-	for ( .@i = 1; .@i <= 7; .@i++ )
-		killmonster 'map_name$[1], .@npc_name$ + "::OnMyMobDead" + .@i;
+	killmonster 'map_name$[1], instance_npcname("#ghmemorialmob05") + "::OnMyMobDead";
 	end;
 }
 
@@ -1488,60 +1653,58 @@ OnStart:
 
 	// Fix spawn
 	.@label$ = instance_npcname("#ghmemorialmob06") + "::OnMyMobDead";
-	monster 'map_name$[1],252, 75, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],253, 76, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],247, 77, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],248, 80, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],236,100, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],240,100, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],242,100, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],244,100, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],199,111, "Corrupted Palace Guard",2468,1, .@label$;
-	monster 'map_name$[1],181,107, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],177,110, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],236, 27, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],242, 27, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],252, 26, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],172,130, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],171,127, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],173,127, "Wandering Archer",2469,1, .@label$;
-	monster 'map_name$[1],177, 69, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],186, 66, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],189, 67, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],190, 68, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],257,157, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],246,159, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],237,158, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],206,159, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],172,120, "Corrupted Abysmal Knight",2470,1, .@label$;
-	monster 'map_name$[1],226, 30, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],226, 38, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],228, 29, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],226, 63, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],268,137, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],263,138, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],259,138, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],259,138, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],187,121, "Suffered Khalitzburg",2471,1, .@label$;
-	monster 'map_name$[1],265, 52, "Bloody Knight",2472,1, .@label$;
-	monster 'map_name$[1],265, 55, "Bloody Knight",2472,1, .@label$; 
-	monster 'map_name$[1],264, 79, "Bloody Knight",2472,1, .@label$; 
-	monster 'map_name$[1],225, 92, "Bloody Knight",2472,1, .@label$; 
-	monster 'map_name$[1],237, 92, "Bloody Knight",2472,1, .@label$; 
-	monster 'map_name$[1],249, 92, "Bloody Knight",2472,1, .@label$; 
-	monster 'map_name$[1],256, 93, "Bloody Knight",2472,1, .@label$; 
-	monster 'map_name$[1],264,100, "Bloody Knight",2472,1, .@label$;
-	monster 'map_name$[1],181,120, "Bloody Knight",2472,1, .@label$;
+	if('OGH_Mode == 1) // Normal Mode
+		setarray .@mob_id[0],2468,2469,2470,2471,2472;
+	else if('OGH_Mode == 2) // Hard Mode
+		setarray .@mob_id[0],3143,3144,3145,3146,3147;
+		
+	monster 'map_name$[1],252, 75, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],253, 76, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],247, 77, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],248, 80, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],236,100, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],240,100, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],242,100, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],244,100, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],199,111, "Corrupted Palace Guard",.@mob_id[0],1, .@label$;
+	monster 'map_name$[1],181,107, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],177,110, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],236, 27, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],242, 27, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],252, 26, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],172,130, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],171,127, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],173,127, "Wandering Archer",.@mob_id[1],1, .@label$;
+	monster 'map_name$[1],177, 69, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],186, 66, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],189, 67, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],190, 68, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],257,157, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],246,159, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],237,158, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],206,159, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],172,120, "Corrupted Abysmal Knight",.@mob_id[2],1, .@label$;
+	monster 'map_name$[1],226, 30, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],226, 38, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],228, 29, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],226, 63, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],268,137, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],263,138, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],259,138, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],259,138, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],187,121, "Suffered Khalitzburg",.@mob_id[3],1, .@label$;
+	monster 'map_name$[1],265, 52, "Bloody Knight",.@mob_id[4],1, .@label$;
+	monster 'map_name$[1],265, 55, "Bloody Knight",.@mob_id[4],1, .@label$; 
+	monster 'map_name$[1],264, 79, "Bloody Knight",.@mob_id[4],1, .@label$; 
+	monster 'map_name$[1],225, 92, "Bloody Knight",.@mob_id[4],1, .@label$; 
+	monster 'map_name$[1],237, 92, "Bloody Knight",.@mob_id[4],1, .@label$; 
+	monster 'map_name$[1],249, 92, "Bloody Knight",.@mob_id[4],1, .@label$; 
+	monster 'map_name$[1],256, 93, "Bloody Knight",.@mob_id[4],1, .@label$; 
+	monster 'map_name$[1],264,100, "Bloody Knight",.@mob_id[4],1, .@label$;
+	monster 'map_name$[1],181,120, "Bloody Knight",.@mob_id[4],1, .@label$;
 	end;
 
 OnMyMobDead:
-OnMyMobDead1:
-OnMyMobDead2:
-OnMyMobDead3:
-OnMyMobDead4:
-OnMyMobDead5:
-OnMyMobDead6:
-OnMyMobDead7:
 	if (mobcount('map_name$[1], instance_npcname("#ghmemorialmob06") + "::OnBossDead") > 0)	// Prevent boss re-spawn
 		end;
 	if ('mode == 2)	// Higher (but unknown) spawn rate in fast mode
@@ -1554,7 +1717,10 @@ OnMyMobDead7:
 
 		.@r = rand(4) * 2;
 		setarray .@coord[0], 166,119, 211,45, 227,139, 245,74;
-		monster 'map_name$[1],.@coord[.@r],.@coord[.@r+1], "2nd Commander of Destruction",2474,1, instance_npcname("#ghmemorialmob06") + "::OnBossDead";
+		if('OGH_Mode == 1) // Normal Mode
+			monster 'map_name$[1],.@coord[.@r],.@coord[.@r+1], "2nd Commander of Destruction",2474,1, instance_npcname("#ghmemorialmob06") + "::OnBossDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			monster 'map_name$[1],.@coord[.@r],.@coord[.@r+1], "2nd Commander of Destruction",3149,1, instance_npcname("#ghmemorialmob06") + "::OnBossDead";
 	}
 	end;
 
@@ -1571,10 +1737,7 @@ OnBossDead:
 	for ( .@i = 1; .@i <= 7; .@i++ )
 		donpcevent instance_npcname("#ogh_3-" + .@i) + "::OnStop";
 
-	.@npc_name$ = instance_npcname("#ghmemorialmob06");
-	killmonster 'map_name$[1], .@npc_name$ + "::OnMyMobDead";
-	for ( .@i = 1; .@i <= 7; .@i++ )
-		killmonster 'map_name$[1], .@npc_name$ + "::OnMyMobDead" + .@i;
+	killmonster 'map_name$[1], instance_npcname("#ghmemorialmob06") + "::OnMyMobDead";
 
 	// Hidden mobs
 	setarray .@coord[0],
@@ -1591,9 +1754,9 @@ OnBossDead:
 2@gl_k,150,180,0	script	#Geron	HIDDEN_WARP_NPC,7,7,{
 	end;
 OnTouch_:
-	if ('step != 7)
+	if ('step != 6)
 		end;
-	'step = 8;
+	'step = 7;
 	disablenpc instance_npcname("#Geron");
 	mapannounce 'map_name$[1], "???: Do not come here! It's a trap... Kkkkah!!!", bc_map,0xFF7777,FW_NORMAL,15;
 	enablenpc instance_npcname("Himelmez#22");
@@ -1613,18 +1776,17 @@ OnTouch_:
 	else if (.@i == 3) .@mobs = 5;
 	else if (.@i < 7) .@mobs = 6;
 	else .@mobs = 7;
-	.@event$ = instance_npcname( strnpcinfo(0) ) + "::OnMobDead";
-	killmonster 'map_name$[1], .@event$;
 	getmapxy .@map$,.@x,.@y, BL_NPC;
 	specialeffect EF_VENOMDUST;
-	monster .@map$,.@x,.@y,"Maggot",2467,.@mobs, .@event$;
+	if('OGH_Mode == 1) // Easy Mode
+		monster .@map$,.@x,.@y,"Maggot",2467,.@mobs;
+	else if('OGH_Mode == 2) // Hard Mode
+		monster .@map$,.@x,.@y,"Maggot",3142,.@mobs;
 	initnpctimer;
 	end;
 OnTimer45000:
 	enablenpc();
 	stopnpctimer;
-	end;
-OnMobDead:
 	end;
 }
 2@gl_k,145,236,4	duplicate(Decomposed body#1)	Decomposed body#2	4_M_DIEMAN,5,5
@@ -1689,9 +1851,9 @@ OnMobDead:
 	mes "That is amazing ~ you made it all the way here. May I say thank you?";
 	close3;
 OnTouch_:
-	if ('step != 8)
+	if ('step != 7)
 		end;
-	'step = 9;
+	'step = 8;
 	disablenpc();
 	if ('mode == 1)
 		donpcevent instance_npcname("#talkinstance7") + "::OnStart";
@@ -1869,7 +2031,10 @@ OnTimer20500:
 	end;
 OnStart:
 	enablenpc instance_npcname("#ghmemorialmob07");
-	monster 'map_name$[1],158,255,"Amdarais",2476,1,instance_npcname("#ghmemorialmob07") + "::OnMyMobDead";// MG_AMDARAIS
+	if('OGH_Mode == 1) // Normal Mode
+		monster 'map_name$[1],158,255,"Amdarais",2476,1,instance_npcname("#ghmemorialmob07") + "::OnMyMobDead";// MG_AMDARAIS
+	else if('OGH_Mode == 2) // Hard Mode
+		monster 'map_name$[1],158,255,"Amdarais",3150,1,instance_npcname("#ghmemorialmob07") + "::OnMyMobDead";// MG_AMDARAIS
 	'boss_id = $@mobid[0];
 	unittalk 'boss_id, "Run away... run away from me...";
 	initnpctimer;
@@ -1930,38 +2095,59 @@ OnTimer5000:
 		break;
 	case 8:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff3") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Suffered Khalitzburg",2471,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Suffered Khalitzburg",2471,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Suffered Khalitzburg",3146,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	case 7:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff3") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Abysmal Knight",2470,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Abysmal Knight",2470,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 1) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Abysmal Knight",3145,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	case 6:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff3") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Bloody Knight",2472,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Bloody Knight",2472,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Bloody Knight",3147,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	case 5:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff2") + "::OnEvent";
 		break;
 	case 4:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff3") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Wandering Archer",2469,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Wandering Archer",2469,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Wandering Archer",3144,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	case 3:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff1") + "::OnEvent";
 		donpcevent instance_npcname("Varmundt's Ghost#Buff3") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Bloody Knight",2472,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Bloody Knight",2472,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Bloody Knight",3147,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	case 2:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff1") + "::OnEvent";
 		donpcevent instance_npcname("Varmundt's Ghost#Buff3") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Abysmal Knight",2470,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Abysmal Knight",2470,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Abysmal Knight",3145,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	case 1:
 	case 0:
 		donpcevent instance_npcname("Varmundt's Ghost#Buff1") + "::OnEvent";
 		donpcevent instance_npcname("Varmundt's Ghost#Buff4") + "::OnEvent";
-		areamonster 'map_name$[1],140,220,175,255,"Wandering Archer",2469,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		if('OGH_Mode == 1) // Normal Mode
+			areamonster 'map_name$[1],140,220,175,255,"Wandering Archer",2469,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
+		else if('OGH_Mode == 2) // Hard Mode
+			areamonster 'map_name$[1],140,220,175,255,"Wandering Archer",3144,6, instance_npcname("#ghmemorialmob08") + "::OnMobDead";
 		break;
 	}
 	end;
@@ -1979,16 +2165,16 @@ OnTouch:
 	specialeffect2 EF_ENHANCE;
 	.@num = atoi( replacestr(strnpcinfo(2), "Buff", "") );
 	if (.@num == 1)
-		sc_start SC_GLASTHEIM_HIDDEN,30000,90,10000,SCSTART_NOTICKDEF;
+		sc_start SC_GLASTHEIM_HIDDEN,30000,1,10000,SCSTART_NOTICKDEF;
 	else if (.@num == 2)
-		sc_start SC_GLASTHEIM_STATE,30000,20,10000,SCSTART_NOTICKDEF;
+		sc_start SC_GLASTHEIM_STATE,30000,1,10000,SCSTART_NOTICKDEF;
 	else if (.@num == 3) {
-		sc_start2 SC_GLASTHEIM_HEAL,30000,100,50,10000,SCSTART_NOTICKDEF;
-		sc_start2 SC_GLASTHEIM_HPSP,30000,10000,1000,10000,SCSTART_NOTICKDEF;
+		sc_start SC_GLASTHEIM_HEAL,30000,1,10000,SCSTART_NOTICKDEF;
+		sc_start SC_GLASTHEIM_HPSP,30000,1,10000,SCSTART_NOTICKDEF;
 	}
 	else {
-		sc_start SC_GLASTHEIM_DEF,30000,100,10000,SCSTART_NOTICKDEF;
-		sc_start2 SC_GLASTHEIM_ITEMDEF,30000,200,50,10000,SCSTART_NOTICKDEF;
+		sc_start SC_GLASTHEIM_DEF,30000,1,10000,SCSTART_NOTICKDEF;
+		sc_start SC_GLASTHEIM_ITEMDEF,30000,1,10000,SCSTART_NOTICKDEF;
 	}
 	end;
 OnEvent:
@@ -2015,27 +2201,35 @@ OnTimer10000:
 
 
 2@gl_k,158,241,1	script	Hugin#21	4_M_SAGE_C,{
-	if ('step != 9)
+	if ('step != 8)
 		end;
-	if (checkquest(12319,HUNTING) == 2) {// note: complete hunting 'Corrupted Soul Hunt' prerequis
-		if (checkweight(6607,5, 6608,5) == 0) {
-			mes "^ff0000It seems like you have too many types or weights of items. Please organize your inventory.^000000";
-			close;
-		}
+	if('OGH_Mode == 1) { // Normal Mode
+		setarray .@quest_id[0],12319,12322,12321;
+		setarray .@exp[0],350000,350000;
+		setarray .@item[0],	6607,5, // Temporal_Crystal
+							6608,5; // Coagulated_Spell
+
+	} else if('OGH_Mode == 2) { // Hard Mode
+		setarray .@quest_id[0],12337,12335,12339;
+		setarray .@exp[0],350000,350000;
+		setarray .@item[0],	6607,5, // Temporal_Crystal
+							6755,5; // Contaminated_Magic
+	}
+	if (checkquest(.@quest_id[0],HUNTING) == 2) {// note: complete hunting 'Corrupted Soul Hunt' prerequis
 		mes "[Hugin]";
 		mes "Hm, you are very well. First of all, let me give you some loot from Amdarais.";
-		erasequest 12319;
-		setquest 12322;// Space Distortion
-		if (isbegin_quest(12321) == 0) {
-			setquest 12321;// Time Conqueror
-			completequest 12321;
-			getitem 6607,5;// Temporal_Crystal
-			getitem 6608,5;// Coagulated_Spell
-			getexp 350000,350000;
+		erasequest .@quest_id[0];
+		setquest .@quest_id[1];// Space Distortion
+		if (isbegin_quest(.@quest_id[2]) == 0) {
+			setquest .@quest_id[2];// Time Conqueror
+			completequest .@quest_id[2];
+			for (.@i = 0; .@i < getarraysize(.@item); .@i+=2)
+				getitem .@item[.@i],.@item[.@i+1];
+			getexp .@exp[0],.@exp[0];
 		}
 		else {
-			getitem 6607,1;// Temporal_Crystal
-			getitem 6608,1;// Coagulated_Spell
+			getitem .@item[0],1;
+			getitem .@item[2],1;
 		}
 		next;
 		mes "[Hugin]";
@@ -2071,34 +2265,43 @@ OnTimer10000:
 		close;
 	}
 	close2;
+	if('OGH_Mode == 1 && !OGH_Norm) // Completing Normal Mode grants access to Hard Mode
+		set OGH_Norm,1; 
 	warp "glast_01",204,270;
+	set @OGH_Mode,0;
 	end;
 }
 
 // Treasure Room
 //============================================================
 1@gl_k,165,136,3	script	Strange crack#2	CLEAR_NPC,{
-	if ('step != 9)
+	if ('step != 8)
 		end;
-	if (isbegin_quest(12322) == 0) {// Space Distortion
+	if ('OGH_Mode == 1 && isbegin_quest(12322) == 0 || 'OGH_Mode == 2 && isbegin_quest(12335) == 0) {// Space Distortion
 		mes "The crack looks suspicious but nothing more to check.";
 		close;
 	}
 	specialeffect EF_SPELLBREAKER;
 
 	.@random = rand(1,4);
+
+	if('OGH_Mode == 1) // Normal Mode
+		set .@drop_id,6608; // Coagulated_Spell
+	else if('OGH_Mode == 2) // Hard Mode
+		set .@drop_id,6755; // Contaminated_Magic
+
 	switch( atoi(strnpcinfo(2)) ) {
 	case 2:
 		for ( .@i = 1; .@i <= .@random; ++.@i )
 			makeitem 719,1,"this",165,138;
-		makeitem 6608,1,"this",165,138;
+		makeitem .@drop_id,1,"this",165,138;
 		break;
 	case 3:
 		for ( .@i = 1; .@i <= .@random; ++.@i )
 			makeitem 720,1,"this",159,138;
 		if (rand(1,4) == 4)
 			makeitem2 15066,1,"this",159,138,0,0,0,0,0,0,0;
-		makeitem 6608,1,"this",159,138;
+		makeitem .@drop_id,1,"this",159,138;
 		makeitem 7229,1,"this",159,138;
 		break;
 	case 4:
@@ -2106,7 +2309,7 @@ OnTimer10000:
 			makeitem 721,1,"this",153,138;
 		if (rand(1,4) == 4)
 			makeitem2 13086,1,"this",153,138,0,0,0,0,0,0,0;
-		makeitem 6608,1,"this",153,138;
+		makeitem .@drop_id,1,"this",153,138;
 		makeitem 7230,1,"this",153,138;
 		break;
 	case 5:
@@ -2116,7 +2319,7 @@ OnTimer10000:
 			makeitem2 2949,1,"this",147,138,0,0,0,0,0,0,0;
 		makeitem 6612,1,"this",147,138;
 		makeitem 6613,1,"this",147,138;
-		makeitem 6608,1,"this",147,138;
+		makeitem .@drop_id,1,"this",147,138;
 		break;
 	case 6:
 		for ( .@i = 1; .@i <= .@random; ++.@i )
@@ -2124,21 +2327,21 @@ OnTimer10000:
 		makeitem 7228,1,"this",141,138;
 		if (rand(1,4) == 4)
 			makeitem2 13440,1,"this",141,138,0,0,0,0,0,0,0;
-		makeitem 6608,1,"this",141,138;
+		makeitem .@drop_id,1,"this",141,138;
 		break;
 	case 7:
 		for ( .@i = 1; .@i <= .@random; ++.@i )
 			makeitem 726,1,"this",135,138;
 		if (rand(1,4) == 4)
 			makeitem2 2022,1,"this",135,138,0,0,0,0,0,0,0;
-		makeitem 6608,1,"this",135,138;
+		makeitem .@drop_id,1,"this",135,138;
 		break;
 	case 8:
 		for ( .@i = 1; .@i <= .@random; ++.@i )
 			makeitem 727,1,"this",129,138;
 		if (rand(1,4) == 4)
 			makeitem2 21007,1,"this",129,138,0,0,0,0,0,0,0;
-		makeitem 6608,1,"this",129,138;
+		makeitem .@drop_id,1,"this",129,138;
 		break;
 	}
 	disablenpc();
@@ -2152,7 +2355,7 @@ OnTimer10000:
 1@gl_k,129,136,3	duplicate(Strange crack#2)	Strange crack#8	CLEAR_NPC
 
 1@gl_k,269,267,3	script	Strange crack#1	CLEAR_NPC,{
-	if (isbegin_quest(12322) == 0) {// Space Distortion
+	if ( ('OGH_Mode == 1 && isbegin_quest(12322) == 0) || ('OGH_Mode == 2 && isbegin_quest(12335) == 0) ) {// Space Distortion
 		mes "The crack looks suspicious but nothing more to check.";
 		close;
 	}
