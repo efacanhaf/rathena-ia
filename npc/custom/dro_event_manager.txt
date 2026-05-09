@@ -54,7 +54,10 @@ OnInit:
 
 	callsub L_ApplyRates;
 
-	if ($dro_man_until > 0 || $dro_wkn_on > 0) {
+	// Timer roda perma se houver QUALQUER evento configurado (manual ou
+	// fim de semana). Atua como safety net pra detectar abertura/fechamento
+	// da janela do fim de semana caso o OnFri2200/OnMon0300 perca o tick.
+	if ($dro_man_until > 0 || $dro_wkn_exp > 0 || $dro_wkn_drop > 0) {
 		stopnpctimer;
 		initnpctimer;
 	}
@@ -202,6 +205,30 @@ L_ApplyRates:
 	return;
 
 OnTimer60000:
+	// Self-correcting window detection. Roda a cada 60s permanentemente:
+	// se o OnFri2200 / OnMon0300 perdeu a janela (server restart, reload no
+	// minuto exato), aqui pega na proxima passada. Tambem zera quando passa
+	// da segunda 03h UTC mesmo se OnMon0300 nao disparar.
+	.@wd = gettime(DT_DAYOFWEEK);
+	.@h  = gettime(DT_HOUR);
+	.@in_window = ((.@wd == 5 && .@h >= 22) || .@wd == 6 || .@wd == 0 || (.@wd == 1 && .@h < 3)) ? 1 : 0;
+	if ($dro_wkn_exp > 0 || $dro_wkn_drop > 0) {
+		if (.@in_window && $dro_wkn_on == 0) {
+			$dro_wkn_on = 1;
+			callsub L_ApplyRates;
+			.@texp  = 100 + $dro_wkn_exp;
+			.@tdrop = 100 + $dro_wkn_drop;
+			announce "*** EVENTO DE FIM DE SEMANA! *** EXP em " + .@texp + "% (100% base + " + $dro_wkn_exp + "% evento) e Drops em " + .@tdrop + "% (100% base + " + $dro_wkn_drop + "% evento) ate segunda-feira 00h. Bom farm!", bc_all|bc_blue;
+		} else if (!.@in_window && $dro_wkn_on > 0) {
+			$dro_wkn_on = 0;
+			callsub L_ApplyRates;
+			if ($dro_man_until == 0)
+				announce "Evento de fim de semana encerrado. Taxas voltaram ao normal. Boa semana!", bc_all|bc_blue;
+			else
+				announce "Evento de fim de semana encerrado. Evento manual continua ativo.", bc_all|bc_blue;
+		}
+	}
+
 	if ($dro_man_until > 0 && gettimetick(2) >= $dro_man_until) {
 		$dro_man_until = 0;
 		$dro_man_kind$ = "";
@@ -212,11 +239,11 @@ OnTimer60000:
 		else
 			announce "Evento encerrado. Taxas voltaram ao normal. Obrigado por jogar!", bc_all|bc_blue;
 	}
-	if ($dro_man_until > 0 || $dro_wkn_on > 0) {
-		initnpctimer;
-		end;
-	}
-	stopnpctimer;
+
+	// Sempre re-arma. Antes parava quando nao tinha evento — isso era o bug:
+	// se OnFri2200 nao disparasse, ninguem mais acordava o timer ate o
+	// proximo restart. Agora o timer roda perma como safety net.
+	initnpctimer;
 	end;
 
 L_Off:
@@ -299,11 +326,13 @@ L_Weekend:
 		.@texp  = 100 + .@wexp;
 		.@tdrop = 100 + .@wdrop;
 		announce "*** EVENTO DE FIM DE SEMANA! *** EXP em " + .@texp + "% (100% base + " + .@wexp + "% evento) e Drops em " + .@tdrop + "% (100% base + " + .@wdrop + "% evento) ate segunda-feira 00h. Bom farm!", bc_all|bc_blue;
-		stopnpctimer;
-		initnpctimer;
 	} else {
 		$dro_wkn_on = 0;
 	}
+	// Timer perma como safety net (abre/fecha janela mesmo se OnFri2200
+	// ou OnMon0300 falharem).
+	stopnpctimer;
+	initnpctimer;
 	dispbottom "[event] Auto fim de semana CONFIGURADO: EXP +" + .@wexp + "%, Drop +" + .@wdrop + "%. Vai ativar Sex 19h e desativar Seg 00h (Brasilia).";
 	end;
 
