@@ -521,7 +521,8 @@ Body:
         Rate: 1000
   - Id: 3141
     AegisName: MG_GHOUL_H
-    Name: Grand Chamberlain in pain
+    # Capped to 23 chars per server limit (real name "Grand Chamberlain in pain")
+    Name: Grand Chamberlain in pai
     Level: 162
     Hp: 416200
     BaseExp: 14222
@@ -694,7 +695,8 @@ Body:
   - Id: 3145
     AegisName: MG_KNIGHT_OF_ABYSS_H
     Name: Corrupted Abysmal Knight
-    JapaneseName: Corrupted Knight of Abyss
+    # Capped to 23 chars per server limit (real name "Corrupted Knight of Abyss")
+    JapaneseName: Corrupted Knight of Abys
     Level: 172
     Hp: 451578
     BaseExp: 18584
