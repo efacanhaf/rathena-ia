@@ -1,0 +1,29 @@
+// =============================================================================
+// dro_mvp_state_writer.txt — escreve mvp_state.* via query_sql.
+//
+// Hoje é o ÚNICO escritor da tabela mvp_state. Quando shipármos persistência
+// de MVP em C++ (próximo projeto), o C++ vai escrever no boot e o NPC vira
+// idempotente / opcional.
+//
+// OnInit: escreve sentinel (0,'_boot') com gettimetick(2). O bot lê esse row
+// pra detectar restart e fazer reseed das outras rows.
+// OnNPCKillEvent: filtra MVP, escreve (mob_id, map) alive=0 com timestamp.
+// =============================================================================
+-	script	MvpStateWriter	-1,{
+OnInit:
+	.@now = gettimetick(2);
+	query_sql "INSERT INTO mvp_state (mob_id, map, last_kill_ts, last_killer_char_id, alive, state_updated_ts) " +
+	          "VALUES (0,'_boot',NULL,NULL,1," + .@now + ") " +
+	          "ON DUPLICATE KEY UPDATE state_updated_ts=" + .@now;
+	end;
+
+OnNPCKillEvent:
+	if (getmonsterinfo(killedrid, MOB_MVPEXP) <= 0) end;
+	.@now = gettimetick(2);
+	.@cid = getcharid(0);
+	.@map$ = strcharinfo(3);
+	query_sql "INSERT INTO mvp_state (mob_id, map, last_kill_ts, last_killer_char_id, alive, state_updated_ts) " +
+	          "VALUES (" + killedrid + ",'" + escape_sql(.@map$) + "'," + .@now + "," + .@cid + ",0," + .@now + ") " +
+	          "ON DUPLICATE KEY UPDATE last_kill_ts=" + .@now + ", last_killer_char_id=" + .@cid + ", alive=0, state_updated_ts=" + .@now;
+	end;
+}
