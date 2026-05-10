@@ -1066,12 +1066,25 @@ static TIMER_FUNC(aichrif_follow_timer){
 		//       reviving, so the merc doesn't pop back mid-fight and
 		//       insta-die again. Player can still Resurrect the corpse
 		//       in this window — AI_EVT_RESURRECTED clears `hp == 0`.
+		// Phase 6.3 — also block revival while any party member is
+		// dead. Otherwise the tanker pops back into a half-dead party
+		// and re-dies pulling fresh aggro before anyone gets ressed.
 		if (s.hp == 0) {
 			if (s.respawn_at_tick != 0) continue;	// already scheduled
 			if (!s.owner_present) continue;
 			if (s.cur_mapindex == 0 || s.owner_mapindex == 0) continue;
 			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
 			if (mname == nullptr || mname[0] == 0) continue;
+
+			bool party_member_dead = false;
+			for (uint8 i = 0; i < s.party_count; i++) {
+				if (s.party_members[i].account_id != 0
+				    && s.party_members[i].hp_pct == 0) {
+					party_member_dead = true;
+					break;
+				}
+			}
+			if (party_member_dead) continue;
 
 			constexpr t_tick AI_MERC_DEAD_REVIVE_GAP_MS = 30000;
 			bool different_map = (s.cur_mapindex != s.owner_mapindex);
@@ -1119,7 +1132,7 @@ static TIMER_FUNC(aichrif_follow_timer){
 		// stand close.
 		int32 lead_x, lead_y;
 		if (s.role == AI_HIRE_ROLE_TANK) {
-			constexpr int32 LEAD_DISTANCE = 3;	// cells in front of owner
+			constexpr int32 LEAD_DISTANCE = 5;	// cells in front of owner
 			int32 ldx = s.lead_dx, ldy = s.lead_dy;
 			if (ldx == 0 && ldy == 0) {
 				// Owner never moved (or just spawned). Stand 2 cells north
@@ -1151,12 +1164,17 @@ static TIMER_FUNC(aichrif_follow_timer){
 		// 1:1 with REPORTs so we re-walk every time the owner pos snapshot
 		// updates. Anything higher creates visible follow lag.
 		if (s.last_follow_tick != 0 && DIFF_TICK(now, s.last_follow_tick) < 200) continue;
-		// Phase 6.3 — engaging a mob: let pursuit run as long as we're
-		// not absurdly far from the owner. The combat tick already gates
-		// tanker engagement on owner_target_id, so target_id != 0 means
-		// the player chose this fight; stop interrupting it.
+		// Phase 6.3 — combat takes priority over formation. If the merc
+		// has a target OR the owner has a target (which the tanker
+		// combat tick will pursue on the next 250ms tick), let the combat
+		// pursuit run — don't yank the tanker back to the lead slot.
+		// Without this gate the follow tick (re-walks every 200ms) keeps
+		// canceling unit_attack's chase, so the tanker never closes range
+		// and never pulls aggro.
 		constexpr int32 AI_FOLLOW_PURSUIT_TOLERANCE = 25;
-		if (s.target_id != 0 && cheb_owner < AI_FOLLOW_PURSUIT_TOLERANCE) continue;
+		bool engaging = (s.target_id != 0)
+			|| (s.role == AI_HIRE_ROLE_TANK && s.owner_target_id != 0);
+		if (engaging && cheb_owner < AI_FOLLOW_PURSUIT_TOLERANCE) continue;
 		// Warp safety net for Fly Wing / @warp / drift past walk range.
 		constexpr int32 AI_FOLLOW_WARP_GAP = 25;
 		if (cheb_owner >= AI_FOLLOW_WARP_GAP) {
@@ -1270,18 +1288,55 @@ static TIMER_FUNC(aichrif_combat_timer){
 		// formation — no auto-pull, no chasing mobs the player ignored.
 		// Autonomous shells (no owner) keep the old top-3 jitter.
 		if (s.role == AI_HIRE_ROLE_TANK) {
-			if (s.owner_target_id == 0) {
+			// Phase 6.3 — tank target priority:
+			//   1. owner's explicit attack target (auto-attack)
+			//   2. mob attacking the owner (owner took damage in last 3s)
+			//   3. nothing — stay in formation
+			constexpr t_tick OWNER_DEFEND_GRACE_MS = 3000;
+			bool owner_being_hit = (s.last_owner_damage_tick != 0)
+				&& DIFF_TICK(now, s.last_owner_damage_tick) < OWNER_DEFEND_GRACE_MS;
+			if (s.owner_target_id == 0 && !owner_being_hit) {
 				if (s.target_id != 0) s.target_id = 0;
 				continue;
 			}
-			for (uint8 i = 0; i < s.enemy_count; i++) {
-				if (s.enemies[i].id == s.owner_target_id) {
-					idx = i;
-					tid = s.enemies[i].id;
-					break;
+			// Try to match the explicit owner_target first.
+			if (s.owner_target_id != 0) {
+				for (uint8 i = 0; i < s.enemy_count; i++) {
+					if (s.enemies[i].id == s.owner_target_id) {
+						idx = i;
+						tid = s.enemies[i].id;
+						break;
+					}
 				}
 			}
-			if (tid == 0) continue;	// owner's target out of our view, skip
+			// Fallback: defend — pick the mob CLOSEST to the owner. The
+			// enemy_scan on map-server already includes distance from the
+			// shell center; but we want closest to owner, so approximate
+			// by smallest absolute distance to owner cell.
+			if (tid == 0 && owner_being_hit) {
+				int32 best_dist = 999;
+				int32 best_idx = -1;
+				for (uint8 i = 0; i < s.enemy_count; i++) {
+					int32 dx_e = (int32)s.enemies[i].x - (int32)s.owner_x;
+					int32 dy_e = (int32)s.enemies[i].y - (int32)s.owner_y;
+					int32 d = std::max(std::abs(dx_e), std::abs(dy_e));
+					if (d < best_dist) { best_dist = d; best_idx = i; }
+				}
+				if (best_idx >= 0) {
+					idx = (uint8)best_idx;
+					tid = s.enemies[idx].id;
+				}
+			}
+			if (tid == 0) {
+				// Nothing actionable in our enemy view — walk to the owner
+				// so the next REPORT brings the threat into range.
+				if (s.last_follow_tick == 0 || DIFF_TICK(now, s.last_follow_tick) > 200) {
+					aichrif_send_walk_to(char_fd, s.shell_id,
+						(uint16)s.owner_x, (uint16)s.owner_y);
+					s.last_follow_tick = now;
+				}
+				continue;
+			}
 		} else {
 			// Autonomous shell (no owner). Pick among top-3 closest.
 			uint8 max_pick = (uint8)std::min<uint8>(s.enemy_count, 3);

@@ -9771,8 +9771,22 @@ int32 pc_dead(map_session_data *sd,block_list *src)
 	// normal death pipeline (penalty, save, restart map, party leave)
 	// crashes on chrif_save or DB lookups. Bail out: hp stays 0, the
 	// AI_EVT_DIED hook on map-side aichrif handles state for the shell.
-	if (aishell_is_shell((uint32)sd->status.account_id))
-		return 0;
+	// Phase 6.3 — but DO set the corpse pose + clear unit so the client
+	// renders the merc lying on the ground instead of standing in place.
+	if (aishell_is_shell((uint32)sd->status.account_id)) {
+		// Phase 6.3 — switch the view data to the corpse pose so future
+		// `clif_set_unit_idle` packets (e.g. another client coming into
+		// range) render the merc lying down instead of standing.
+		sd->vd.dead_sit = 2;
+		// Return 1 (NOT 0). Returning 0 tells status_damage that "death
+		// was cancelled", which skips the standard cleanup including
+		// `clif_clearunit_area(target, CLR_DEAD)` — the packet that
+		// triggers the death animation on already-rendered clients. We
+		// want the cleanup but NOT the &2 (remove from map) or &4 (free)
+		// bits, since the shell stays on the map for resurrection /
+		// 30s out-of-combat respawn.
+		return 1;
+	}
 
 	// Activate Steel body if a super novice dies at 99+% exp [celest]
 	// Super Novices have no kill or die functions attached when saved by their angel
