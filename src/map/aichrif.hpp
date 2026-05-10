@@ -44,14 +44,22 @@ bool aishell_is_shell(uint32 account_id);
 /// the party leader).
 int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 tier,
 		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
-		uint16 base_level_override = 0, uint16 job_level_override = 0);
+		uint16 base_level_override = 0, uint16 job_level_override = 0,
+		uint8 role = 0 /* AI_HIRE_ROLE_SUPPORT */);
 
 /// Phase 6 — manual dismiss. Tears down the merc shell of `owner_cid`
 /// (char_id) without waiting for the contract timer. ai-server is the
 /// source of truth for who-owns-what, so this just forwards the request.
-int32 aichrif_send_dismiss(uint32 owner_cid);
+int32 aichrif_send_dismiss(uint32 owner_cid, uint8 role);
 
 void do_init_map_aichrif(void);
 void do_final_map_aichrif(void);
+
+/// Phase 6.4 — track the last mob a player damaged so the tank merc can
+/// engage it via REPORT.owner_target_id even when ud.target is 0 (skill-only
+/// damage, ranged, splash, etc.). Called from battle.cpp::battle_damage.
+struct block_list;
+class map_session_data;
+void aichrif_owner_dealt_damage(map_session_data* sd, block_list* target);
 
 #endif /* MAP_AICHRIF_HPP */

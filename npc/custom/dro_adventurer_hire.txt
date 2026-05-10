@@ -1,103 +1,172 @@
 //===== DimensionsRO ==========================================
-//= Treinador de Aventureiros (Phase 6 — ai-server hired support shells)
+//= Treinador de Aventureiros (Phase 6 + 6.2 + 6.3)
 //===== Description: =========================================
-//= NPC para contratar um Aventureiro de suporte (linha
-//= Acolyte/Priest/High Priest/Arch Bishop). O Aventureiro e' um
-//= BL_PC controlado pelo ai-server: segue o player, cura,
-//= buffa, cura status, faz Lex Aeterna em alvos do owner.
+//= Hire de Aventureiro Suporte (Acolyte/Priest/HP/AB) ou
+//= Tanker (Sw/Crusader/Paladin/RG). NPC e' o unico ponto de
+//= contato pro player (hire/dispense) — @hire e @dismiss
+//= continuam GM-only.
 //=
-//= Regras:
-//=  1) So' o LIDER da party pode contratar.
-//=  2) O nivel do Aventureiro e' derivado do nivel do lider
-//=     (nao ha' escolha de tier — o player so escolhe a duracao).
-//=  3) Preco escala com o nivel:
-//=        zeny/min = adv_lvl * 100
-//=     Ex: AB lvl 130 por 60min = 130 * 100 * 60 = 780,000z.
-//=  4) Apos confirmar: cobra zeny, roda @hire, Aventureiro spawna em
-//=     1-2s, entra na party automaticamente, segue/cura/buffa.
-//=  5) Item Voucher_Adventurer (1270150) e' aceito como moeda de
-//=     troca: 1 voucher = 60 minutos sem custo de zeny.
+//= Phase 6.3: 1 merc por role. Player pode contratar
+//= simultaneamente 1 Suporte + 1 Tanker. Anti-stack via
+//= ADV_HIRE_SUP_UNTIL e ADV_HIRE_TANK_UNTIL (vars char_reg).
+//= Tabela dro_merc_contracts tem PK composta (char_id, role).
+//=
+//= Persistencia: cada hire grava uma linha em dro_merc_contracts.
+//= Permite:
+//=   - login auto-restore (OnPCLoginEvent)
+//=   - boot auto-restore (map-server, ping token=1)
+//=   - leaderboard / metricas no futuro
+//=
+//= Orfao: ADV_HIRE_*_UNTIL > now mas ai-server crashou.
+//= NPC oferece restore quando detecta hired_at < $dro_ai_boot_ts.
 //============================================================
 
 prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	mes "[Treinador de Aventureiros]";
 	mes "Ola, aventureiro. Veio buscar um companheiro de jornada?";
-	mes " ";
-	mes "Tenho uns rapazes e mocas dispostos a te seguir, te curar e te abencoar.";
-	mes "(eles nao atacam por conta propria, mas seguram a barra)";
 	next;
 
-	// Party requirement — o Aventureiro entra na party do owner; sem party
-	// nao ha onde encaixa-lo.
-	if (getcharid(1) == 0) {
+	.@now_ts = gettimetick(2);
+	.@sup_active = (ADV_HIRE_SUP_UNTIL > .@now_ts);
+	.@tnk_active = (ADV_HIRE_TANK_UNTIL > .@now_ts);
+
+	mes "[Treinador de Aventureiros]";
+	mes "Voce pode ter um Suporte e um Tanker ao mesmo tempo.";
+	mes " ";
+	if (.@sup_active) {
+		.@left_sup = (ADV_HIRE_SUP_UNTIL == 2147483647) ? -1 : (ADV_HIRE_SUP_UNTIL - .@now_ts) / 60 + 1;
+		mes "Suporte: ^990099contratado^000000 " + ((.@left_sup < 0) ? "(sem expiracao)" : "(restam " + .@left_sup + " min)");
+	} else {
+		mes "Suporte: disponivel";
+	}
+	if (.@tnk_active) {
+		.@left_tnk = (ADV_HIRE_TANK_UNTIL == 2147483647) ? -1 : (ADV_HIRE_TANK_UNTIL - .@now_ts) / 60 + 1;
+		mes "Tanker:  ^FF0000contratado^000000 " + ((.@left_tnk < 0) ? "(sem expiracao)" : "(restam " + .@left_tnk + " min)");
+	} else {
+		mes "Tanker:  disponivel";
+	}
+	next;
+
+	.@chosen = select(
+		"Suporte (cura+buff)",
+		"Tanker (segura aggro)",
+		"Cancelar"
+	);
+	if (.@chosen == 3) close;
+	.@role_id = (.@chosen == 1) ? 0 : 1;
+	.@role_lbl$ = (.@role_id == 1) ? "Tanker" : "Suporte";
+	.@active = (.@role_id == 1) ? .@tnk_active : .@sup_active;
+
+	// Already-hired path: offer restore (if orphan) or dismiss.
+	if (.@active) {
+		.@orphan = 0;
+		query_sql "SELECT job, tier, base_level, job_level, hired_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id,
+			.@c_job, .@c_tier, .@c_blvl, .@c_jlvl, .@c_hired_at;
+		if (getarraysize(.@c_job) > 0 && $dro_ai_boot_ts > 0 && $dro_ai_boot_ts > .@c_hired_at[0])
+			.@orphan = 1;
+
 		mes "[Treinador de Aventureiros]";
-		mes "Voce precisa estar em uma ^FF0000party^000000 para contratar um Aventureiro.";
-		mes " ";
-		mes "Crie uma party (^FF0000/organize <nome>^000000) ou junte-se a uma e volte aqui.";
+		mes "Seu " + .@role_lbl$ + " ja esta contratado.";
+		if (.@orphan) {
+			mes " ";
+			mes "^FF0000Detectei que ele foi perdido em uma reinicializacao.^000000";
+			mes "Posso restaurar agora.";
+		}
+		next;
+
+		if (.@orphan) {
+			.@op = select(
+				"Restaurar agora",
+				"Dispensar (encerra o contrato sem reembolso)",
+				"Voltar"
+			);
+			if (.@op == 3) close;
+			if (.@op == 1) {
+				if (getcharid(1) == 0) {
+					mes "[Treinador de Aventureiros]";
+					mes "Voce precisa estar em uma ^FF0000party^000000 para eu trazer ele de volta.";
+					close;
+				}
+				.@now2 = gettimetick(2);
+				.@until = (.@role_id == 1) ? ADV_HIRE_TANK_UNTIL : ADV_HIRE_SUP_UNTIL;
+				.@permanent = (.@until == 2147483647);
+				.@remaining_min = 0;
+				if (!.@permanent) {
+					.@remaining_sec = .@until - .@now2;
+					if (.@remaining_sec <= 0) {
+						mes "[Treinador de Aventureiros]";
+						mes "Hm, o tempo acabou. Foi-se o contrato.";
+						query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+						if (.@role_id == 1) ADV_HIRE_TANK_UNTIL = 0; else ADV_HIRE_SUP_UNTIL = 0;
+						close;
+					}
+					.@remaining_min = (.@remaining_sec + 59) / 60;
+				}
+				atcommand "@hire " + .@c_job[0] + " " + .@c_tier[0] + " " + .@remaining_min + " " + .@c_blvl[0] + " " + .@c_jlvl[0] + " " + .@role_id;
+				if (.@permanent) {
+					query_sql "UPDATE dro_merc_contracts SET hired_at=" + .@now2 + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+					mes "[Treinador de Aventureiros]";
+					mes "Restaurado! Sem expiracao.";
+				} else {
+					query_sql "UPDATE dro_merc_contracts SET hired_at=" + .@now2 + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+					mes "[Treinador de Aventureiros]";
+					mes "Restaurado! Restam ^0000FF" + .@remaining_min + " minuto(s)^000000.";
+				}
+				close;
+			}
+		} else {
+			.@op = select(
+				"Dispensar agora (encerra o contrato)",
+				"Voltar"
+			);
+			if (.@op == 2) close;
+		}
+
+		// Dispense path — apenas o role escolhido.
+		query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+		if (.@role_id == 1) ADV_HIRE_TANK_UNTIL = 0; else ADV_HIRE_SUP_UNTIL = 0;
+		atcommand "@dismiss " + ((.@role_id == 1) ? "tank" : "support");
+		mes "[Treinador de Aventureiros]";
+		mes "Combinado, dispensei seu " + .@role_lbl$ + ".";
 		close;
 	}
 
-	// Apenas o lider da party pode contratar.
+	// Fresh hire path.
+	if (getcharid(1) == 0) {
+		mes "[Treinador de Aventureiros]";
+		mes "Voce precisa estar em uma ^FF0000party^000000 para contratar um Aventureiro.";
+		mes "Crie uma party (^FF0000/organize <nome>^000000) ou junte-se a uma e volte aqui.";
+		close;
+	}
 	if (!is_party_leader()) {
 		mes "[Treinador de Aventureiros]";
 		mes "So o ^FF0000lider da party^000000 pode contratar um Aventureiro.";
-		mes " ";
 		mes "Peca para o lider conversar comigo.";
 		close;
 	}
 
-	// Soft-dedupe: variavel persistente por personagem evita contratar
-	// um segundo Aventureiro enquanto o primeiro ainda esta ativo. O
-	// ai-server ja faz anti-stack interno; isso so existe pra dar
-	// feedback claro ao player antes de cobrar zeny.
-	if (ADV_HIRED_UNTIL > gettimetick(2)) {
-		.@left = (ADV_HIRED_UNTIL - gettimetick(2)) / 60 + 1;
-		mes "[Treinador de Aventureiros]";
-		mes "Voce ja tem um Aventureiro contratado.";
-		mes "Restam ^0000FF" + .@left + " minuto(s)^000000.";
-		mes " ";
-		mes "Use ^FF0000@dismiss^000000 para dispensa-lo antes de contratar outro.";
-		close;
-	}
-
 	.@blvl = BaseLevel;
-
-	// Classe automatica pelo nivel do lider; o nivel do Aventureiro casa
-	// com o nivel do lider (ai-server escala via base_level_override).
-	//   <  40  -> Acolyte
-	//   40-69  -> Priest
-	//   70-98  -> High Priest
-	//   >= 99  -> Arch Bishop
-	if (.@blvl < 40) {
-		.@job = 4;     .@tier = 0;
-		.@cls$ = "Acolyte";
-		.@jlvl = 50;	// Acolyte job max
-	} else if (.@blvl < 70) {
-		.@job = 8;     .@tier = 1;
-		.@cls$ = "Priest";
-		.@jlvl = 50;	// Priest job max
-	} else if (.@blvl < 99) {
-		.@job = 4014;  .@tier = 1;
-		.@cls$ = "High Priest";
-		.@jlvl = 70;	// HP job max
+	if (.@role_id == 0) {
+		if (.@blvl < 40)      { .@job = 4;    .@tier = 0; .@cls$ = "Acolyte";     .@jlvl = 50; }
+		else if (.@blvl < 70) { .@job = 8;    .@tier = 1; .@cls$ = "Priest";      .@jlvl = 50; }
+		else if (.@blvl < 99) { .@job = 4014; .@tier = 1; .@cls$ = "High Priest"; .@jlvl = 70; }
+		else                  { .@job = 4063; .@tier = 2; .@cls$ = "Arch Bishop"; .@jlvl = 70; }
 	} else {
-		.@job = 4063;  .@tier = 2;
-		.@cls$ = "Arch Bishop";
-		.@jlvl = 70;	// AB job max
+		if (.@blvl < 40)      { .@job = 1;    .@tier = 0; .@cls$ = "Swordsman";   .@jlvl = 50; }
+		else if (.@blvl < 70) { .@job = 14;   .@tier = 1; .@cls$ = "Crusader";    .@jlvl = 50; }
+		else if (.@blvl < 99) { .@job = 4015; .@tier = 2; .@cls$ = "Paladin";     .@jlvl = 70; }
+		else                  { .@job = 4066; .@tier = 2; .@cls$ = "Royal Guard"; .@jlvl = 70; }
 	}
-	.@adv_lvl = .@blvl;	// Aventureiro nasce no mesmo nivel do lider
+	.@adv_lvl = .@blvl;
 
 	mes "[Treinador de Aventureiros]";
-	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 tao forte quanto voce.";
-	mes " ";
+	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") tao forte quanto voce.";
 	mes "Por quanto tempo voce quer a companhia dele?";
 	next;
 
 	.@cost_5  = .@adv_lvl * 100 * 5;
 	.@cost_30 = .@adv_lvl * 100 * 30;
 	.@cost_60 = .@adv_lvl * 100 * 60;
-	// Se o player tem voucher, a opcao 60min troca o preco em zeny por
-	// "1 Voucher de Aventureiro" (consome o item ao confirmar).
 	.@has_voucher = (countitem(1270150) > 0);
 	.@label_60$ = .@has_voucher
 		? "60 minutos (^990099 1 Voucher de Aventureiro^000000)"
@@ -109,12 +178,10 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 		.@label_60$,
 		"Cancelar"
 	);
-
 	if (.@dur == 4) close;
 
 	setarray .@minutes[0], 5, 30, 60;
-	.@min   = .@minutes[.@dur - 1];
-	// Voucher so' substitui o pagamento na opcao 60min.
+	.@min = .@minutes[.@dur - 1];
 	.@pay_voucher = (.@dur == 3 && .@has_voucher);
 	.@price = .@pay_voucher ? 0 : (.@adv_lvl * 100 * .@min);
 
@@ -125,18 +192,14 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	}
 
 	mes "[Treinador de Aventureiros]";
-	if (.@pay_voucher) {
-		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos.";
-		mes "Em troca: ^FF00001 Voucher de Aventureiro^000000.";
-	} else {
-		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos.";
-		mes "Em troca: ^0000FF" + .@price + "z^000000.";
-	}
+	if (.@pay_voucher)
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos. Em troca: ^FF00001 Voucher de Aventureiro^000000.";
+	else
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos. Em troca: ^0000FF" + .@price + "z^000000.";
 	next;
 	if (select("Sim:Nao") == 2) close;
 
 	if (.@pay_voucher) {
-		// Re-checa contagem entre os menus (player pode ter dado trade).
 		if (countitem(1270150) < 1) {
 			mes "[Treinador de Aventureiros]";
 			mes "Voucher sumiu da sua bolsa. Volte quando tiver um.";
@@ -146,9 +209,22 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	} else {
 		Zeny -= .@price;
 	}
-	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl;
-	ADV_HIRED_UNTIL = gettimetick(2) + .@min * 60;
+
+	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl + " " + .@role_id;
+	.@expires_at = gettimetick(2) + .@min * 60;
+	if (.@role_id == 1) ADV_HIRE_TANK_UNTIL = .@expires_at;
+	else ADV_HIRE_SUP_UNTIL = .@expires_at;
+	if (.@expires_at > ADV_HIRED_UNTIL) ADV_HIRED_UNTIL = .@expires_at;
+
+	// Persiste o contrato (REPLACE pelo PK composto (char_id, role)).
+	query_sql "REPLACE INTO dro_merc_contracts (char_id, account_id, role, job, tier, base_level, job_level, paid_zeny, paid_voucher, duration_min, hired_at, expires_at) VALUES (" +
+		getcharid(0) + ", " + getcharid(3) + ", " + .@role_id + ", " + .@job + ", " + .@tier + ", " + .@adv_lvl + ", " + .@jlvl + ", " + .@price + ", " + (.@pay_voucher ? 1 : 0) + ", " + .@min + ", " + gettimetick(2) + ", " + .@expires_at + ")";
+
 	mes "[Treinador de Aventureiros]";
-	mes "Que a luz te guie. Use ^FF0000@dismiss^000000 pra dispensa-lo a qualquer momento.";
+	if (.@role_id == 1)
+		mes "Que ele segure a frente por voce.";
+	else
+		mes "Que a luz te guie.";
+	mes "Volte aqui se quiser ^FF0000dispensar^000000 antes do tempo acabar.";
 	close;
 }

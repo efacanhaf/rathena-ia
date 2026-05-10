@@ -26,6 +26,7 @@
 #include <common/utils.hpp>
 
 #include "achievement.hpp"
+#include "aichrif.hpp"
 #include "atcommand.hpp"
 #include "battle.hpp"
 #include "battleground.hpp"
@@ -6047,6 +6048,14 @@ void clif_skill_cooldown( map_session_data &sd, uint16 skill_id, t_tick tick ){
 /// 0114 <skill id>.W <src id>.L <dst id>.L <tick>.L <src delay>.L <dst delay>.L <damage>.W <level>.W <div>.W <type>.B (ZC_NOTIFY_SKILL)
 /// 01de <skill id>.W <src id>.L <dst id>.L <tick>.L <src delay>.L <dst delay>.L <damage>.L <level>.W <div>.W <type>.B (ZC_NOTIFY_SKILL2)
 void clif_skill_damage( const block_list& src, const block_list& dst, t_tick tick, int32 sdelay, int32 ddelay, int64 sdamage, int16 div, uint16 skill_id, uint16 skill_lv, e_damage_type type ){
+	// Phase 6.4 — feed AI tank-merc engagement layer for skill damage. Auto
+	// attacks go through battle_damage's hook; skills land here too via
+	// clif_skill_damage so the tank picks them up regardless of source.
+	if (src.type == BL_PC && dst.type == BL_MOB && sdamage > 0) {
+		map_session_data* msd = map_id2sd(src.id);
+		block_list* bdst = map_id2bl(dst.id);
+		if (msd != nullptr && bdst != nullptr) aichrif_owner_dealt_damage(msd, bdst);
+	}
 	type = clif_calc_delay(dst, type, div, sdamage, ddelay, tick);
 	sdamage = clif_hallucination_damage( dst, sdamage );
 

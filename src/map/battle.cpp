@@ -17,6 +17,7 @@
 #include <common/timer.hpp>
 #include <common/utils.hpp>
 
+#include "aichrif.hpp"
 #include "atcommand.hpp"
 #include "battleground.hpp"
 #include "chrif.hpp"
@@ -331,6 +332,11 @@ int32 battle_damage(block_list *src, block_list *target, int64 damage, int16 div
 
 	if (src)
 		sd = BL_CAST(BL_PC, src);
+	// Phase 6.4 — feed the AI tank-merc engagement layer. Any damage the
+	// player deals to a mob (auto-attack, skill, splash, ranged) makes
+	// that mob the merc's owner_target_id fallback in the next REPORT.
+	if (sd != nullptr && damage > 0 && dmg_lv > ATK_BLOCK)
+		aichrif_owner_dealt_damage(sd, target);
 	FreeBlockLock freeLock;
 	if (sd && battle_check_coma(*sd, *target, (e_battle_flag)attack_type))
 		dmg_change = status_damage(src, target, damage, 0, delay, 16, skill_id); // Coma attack

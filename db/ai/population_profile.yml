@@ -112,7 +112,7 @@ Body:
       Equip: { Weapon: 1106, Armor: 2310, Shoes: 2403, AccR: 2604 }
 
   # ===== Swordsman line =====
-  - Job: 1  # Swordsman
+  - Job: 1  # Swordsman — Phase 6.2: tanker low-level bracket gets a shield.
     T0:
       BaseLevel: 30
       JobLevel: 25
@@ -122,7 +122,7 @@ Body:
       Int: 5
       Dex: 18
       Luk: 8
-      Equip: { Weapon: 1106, Armor: 2305 }   # Falchion + Adventurer Suit
+      Equip: { Weapon: 1106, HandL: 2102, Armor: 2305 }   # Falchion + Guard + Adventurer Suit
   - Job: 4002  # High Swordsman
     T0:
       BaseLevel: 35
@@ -190,7 +190,7 @@ Body:
       Dex: 70
       Luk: 30
       Equip: { Weapon: 1158, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
-  - Job: 14  # Crusader
+  - Job: 14  # Crusader — Phase 6.2: tanker line gets a shield.
     T1:
       BaseLevel: 65
       JobLevel: 45
@@ -200,7 +200,7 @@ Body:
       Int: 30
       Dex: 40
       Luk: 20
-      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+      Equip: { Weapon: 1126, HandL: 2105, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
     T2:
       BaseLevel: 95
       JobLevel: 60
@@ -210,8 +210,8 @@ Body:
       Int: 60
       Dex: 65
       Luk: 35
-      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
-  - Job: 4015  # Paladin
+      Equip: { Weapon: 1126, HandL: 2125, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+  - Job: 4015  # Paladin — Phase 6.2: tanker line gets a shield.
     T1:
       BaseLevel: 75
       JobLevel: 50
@@ -221,7 +221,7 @@ Body:
       Int: 40
       Dex: 50
       Luk: 25
-      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+      Equip: { Weapon: 1126, HandL: 2125, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
     T2:
       BaseLevel: 99
       JobLevel: 70
@@ -231,7 +231,7 @@ Body:
       Int: 75
       Dex: 70
       Luk: 40
-      Equip: { Weapon: 1126, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+      Equip: { Weapon: 1126, HandL: 2134, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
 
   # ===== Mage line =====
   - Job: 2  # Mage
@@ -489,3 +489,31 @@ Body:
       Dex: 45
       Luk: 25
       Equip: { Weapon: 1361, Armor: 2310, Garment: 2503, Shoes: 2403, AccR: 2604 }
+
+  # ===== 3rd-class Tanker line (Phase 6.2) =====
+  # Royal Guard tier — used by `@hiretank` and the Treinador NPC for owners
+  # at base level >= 99. Spear + shield + heavy armor; profile is set up
+  # with VIT-heavy stats so the merc actually tanks. Brackets:
+  #   <40   -> Swordsman (Job 1, T0, existing)
+  #   40-69 -> Crusader  (Job 14, T1, existing)
+  #   70-98 -> Paladin   (Job 4015, T2, existing)
+  #   >=99  -> Royal Guard (Job 4066, T2, this entry)
+  - Job: 4066  # Royal Guard
+    T2:
+      BaseLevel: 130
+      JobLevel: 70
+      Str: 90
+      Agi: 50
+      Vit: 99
+      Int: 30
+      Dex: 70
+      Luk: 30
+      Equip:
+        # 1H spears — Royal Guard precisa shield, então 2hSpear (1474/1483/1485)
+        # NAO funciona aqui (slot do shield bloqueado pelo Locations:Both_Hand).
+        Weapon: [1408, 1419, 1420]   # Pike / Pole Axe / Long Horn
+        HandL: [2125, 2134]           # Strong Shield / Shield of Naga
+        Armor: 2310
+        Garment: 2503
+        Shoes: 2403
+        AccR: 2604

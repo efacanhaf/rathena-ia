@@ -24,6 +24,7 @@
 
 #include "achievement.hpp"
 #include "aichrif.hpp"
+#include <common/ai_packets.hpp>	// Phase 6.2 — AI_HIRE_ROLE_SUPPORT/TANK constants
 #include "battle.hpp"
 #include "buyingstore.hpp"
 #include "channel.hpp"
@@ -11467,13 +11468,13 @@ ACMD_FUNC(macrochecker){
 
 #include <custom/atcommand.inc>
 
-/// Phase 6 — `@hire [job] [tier] [duration_min] [base_lvl] [job_lvl]`.
-/// Sends a HIRE_REQUEST to ai-server (via char-server). With NO args,
-/// class/level are auto-derived from the player's BaseLevel, matching
-/// the Treinador de Aventureiros NPC bracketing (Acolyte / Priest / HP
-/// / AB) — this is the path the NPC uses. With explicit args, manual
-/// mode is preserved for GM testing.
-ACMD_FUNC(hire){
+/// Phase 6 — `@hire [job] [tier] [duration_min] [base_lvl] [job_lvl] [role]`.
+/// Phase 6.2 — `@hiretank` is the convenience wrapper for the tanker NPC
+/// path. With NO args, `@hire` auto-derives the SUPPORT line (Acolyte/
+/// Priest/HP/AB) and `@hiretank` auto-derives the TANK line (Sw/Crusader/
+/// Paladin/Royal Guard). Both feed the same HIRE_REQUEST packet — only
+/// the class brackets and the role byte differ.
+static int32 hire_common(map_session_data* sd, int32 fd, const char* message, uint8 default_role){
 	// Phase 6 — mercenary hiring requires being in a party. The merc joins
 	// the party so its UI/HP bar shows up, and so party-only mechanics
 	// (e.g., heal targeting via party) work consistently.
@@ -11483,61 +11484,166 @@ ACMD_FUNC(hire){
 	}
 	int32 job = 0, tier = 0, dur_min = 10;
 	int32 blvl_override = 0, jlvl_override = 0;
+	int32 role_arg = (int32)default_role;
 	int32 n = 0;
 	if (*message != '\0') {
-		n = sscanf(message, "%d %d %d %d %d", &job, &tier, &dur_min, &blvl_override, &jlvl_override);
+		n = sscanf(message, "%d %d %d %d %d %d", &job, &tier, &dur_min, &blvl_override, &jlvl_override, &role_arg);
 		if (n < 1) {
-			clif_displaymessage(fd, "Uso: @hire  (auto)  ou  @hire <job_id> [tier 0..2] [duration_min] [base_lvl] [job_lvl]");
+			clif_displaymessage(fd, "Uso: @hire  (auto)  ou  @hire <job_id> [tier 0..2] [duration_min] [base_lvl] [job_lvl] [role 0=sup/1=tank]");
 			return -1;
 		}
 	}
 
 	// No args = auto mode (NPC parity). Derive class + level from the
 	// player's BaseLevel using the same bracketing as
-	// npc/custom/dro_adventurer_hire.txt.
+	// npc/custom/dro_adventurer_hire.txt. Tank line uses Sw->Cru->Pal->RG.
 	if (n == 0) {
 		int32 blvl = sd->status.base_level;
-		if (blvl < 40)      { job = 4;    tier = 0; jlvl_override = 50; }
-		else if (blvl < 70) { job = 8;    tier = 1; jlvl_override = 50; }
-		else if (blvl < 99) { job = 4014; tier = 1; jlvl_override = 70; }
-		else                { job = 4063; tier = 2; jlvl_override = 70; }
+		if (default_role == AI_HIRE_ROLE_TANK) {
+			if (blvl < 40)      { job = 1;    tier = 0; jlvl_override = 50; }
+			else if (blvl < 70) { job = 14;   tier = 1; jlvl_override = 50; }
+			else if (blvl < 99) { job = 4015; tier = 2; jlvl_override = 70; }
+			else                { job = 4066; tier = 2; jlvl_override = 70; }
+		} else {
+			if (blvl < 40)      { job = 4;    tier = 0; jlvl_override = 50; }
+			else if (blvl < 70) { job = 8;    tier = 1; jlvl_override = 50; }
+			else if (blvl < 99) { job = 4014; tier = 1; jlvl_override = 70; }
+			else                { job = 4063; tier = 2; jlvl_override = 70; }
+		}
 		blvl_override = blvl;
 		dur_min = 0;	// no-arg @hire = sem expiracao, fica ate @dismiss
 	}
 	if (tier < 0 || tier > 2) tier = 2;
 	if (dur_min < 0) dur_min = 0;
+	if (role_arg < 0 || role_arg > 1) role_arg = AI_HIRE_ROLE_SUPPORT;
 	uint32 dur_ms = (uint32)dur_min * 60u * 1000u;
 	int32 r = aichrif_send_hire((uint32)sd->status.account_id, (uint32)sd->status.char_id,
 		(uint16)job, (uint8)tier,
 		mapindex_id2name(sd->mapindex), (uint16)sd->x, (uint16)sd->y, dur_ms,
-		(uint16)blvl_override, (uint16)jlvl_override);
+		(uint16)blvl_override, (uint16)jlvl_override, (uint8)role_arg);
 	if (r != 0) {
 		clif_displaymessage(fd, "@hire: ai-server is offline.");
 		return -1;
 	}
-	// Phase 6 — soft-dedupe variable used by the NPC and Voucher_Adventurer
+	// Phase 6 — soft-dedupe variables used by the NPC and Voucher_Adventurer
 	// script. Optimistic: ai-server's anti-stack is the real authority, but
 	// this gives the script side fast feedback without a round-trip.
-	if (dur_ms > 0)
-		pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"),
-			(int)time(nullptr) + (int)(dur_ms / 1000));
+	// Phase 6.3 — split per role so a char can hold one support + one tank
+	// merc simultaneously. ADV_HIRED_UNTIL kept as max(both) for backward
+	// compatibility with older scripts that read it.
+	int64 hire_until_val = (dur_ms > 0)
+		? ((int64)time(nullptr) + (int64)(dur_ms / 1000))
+		: 0x7FFFFFFFLL;
+	const char* role_var = (role_arg == AI_HIRE_ROLE_TANK)
+		? "ADV_HIRE_TANK_UNTIL" : "ADV_HIRE_SUP_UNTIL";
+	pc_setglobalreg(sd, add_str(role_var), hire_until_val);
+	int64 cur_legacy = pc_readglobalreg(sd, add_str("ADV_HIRED_UNTIL"));
+	if (hire_until_val > cur_legacy)
+		pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), hire_until_val);
+	// Phase 6.2 — persist contract so the silent auto-restore on
+	// ai-server reboot (map/aichrif.cpp::aichrif_restore_online_mercs)
+	// and the OnPCLoginEvent restore in dro_economy_hooks.txt have a
+	// row to read. The NPC also writes here via REPLACE INTO; both
+	// paths converge on the same table. paid_zeny/paid_voucher = 0
+	// because @hire is GM/test entry — the NPC overwrites with the
+	// correct payment values on its own REPLACE.
+	{
+		time_t now_ts = time(nullptr);
+		long long expires = (dur_ms > 0)
+			? (long long)now_ts + (long long)(dur_ms / 1000)
+			: 0LL;
+		Sql_Query(mmysql_handle,
+			"REPLACE INTO dro_merc_contracts "
+			"(char_id, account_id, role, job, tier, base_level, job_level, "
+			" paid_zeny, paid_voucher, duration_min, hired_at, expires_at) "
+			"VALUES (%u, %u, %u, %u, %u, %u, %u, 0, 0, %u, %lld, %lld)",
+			(uint32)sd->status.char_id, (uint32)sd->status.account_id,
+			(uint32)role_arg, (uint32)job, (uint32)tier,
+			(uint32)blvl_override, (uint32)jlvl_override,
+			(uint32)dur_min,
+			(long long)now_ts,
+			expires);
+	}
 	// Phase 6 — no success chat line. The NPC shows its own confirmation
 	// and direct @hire users see the merc spawn shortly after.
 	return 0;
 }
 
+/// Phase 6.2 — `@hire` interface:
+///   @hire                                — helper, lista subcomandos
+///   @hire tank                           — contrata Tanker (auto pelo nivel)
+///   @hire support                        — contrata Suporte (auto pelo nivel)
+///   @hire <job> [tier] [dur] [blvl] [jlvl] [role]   — manual (GM/test)
+ACMD_FUNC(hire){
+	if (*message == '\0') {
+		clif_displaymessage(fd, "Aventureiros — uso:");
+		clif_displaymessage(fd, "  @hire tank                                 contrata Tanker (auto pelo nivel)");
+		clif_displaymessage(fd, "  @hire support                              contrata Suporte (auto pelo nivel)");
+		clif_displaymessage(fd, "  @hire <job> [tier] [dur_min] [blvl] [jlvl] [role]   manual (GM/test)");
+		clif_displaymessage(fd, "  @dismiss                                   dispensa o aventureiro atual");
+		return 0;
+	}
+	// Subcomandos textuais: "tank" / "support". O resto do `message` (se
+	// houver) volta como args manuais do flow normal — typically vazio
+	// quando o player usa `@hire tank`.
+	if (strncasecmp(message, "tank", 4) == 0 &&
+			(message[4] == '\0' || message[4] == ' ' || message[4] == '\t')) {
+		const char* rest = message + 4;
+		while (*rest == ' ' || *rest == '\t') rest++;
+		return hire_common(sd, fd, rest, AI_HIRE_ROLE_TANK);
+	}
+	if (strncasecmp(message, "support", 7) == 0 &&
+			(message[7] == '\0' || message[7] == ' ' || message[7] == '\t')) {
+		const char* rest = message + 7;
+		while (*rest == ' ' || *rest == '\t') rest++;
+		return hire_common(sd, fd, rest, AI_HIRE_ROLE_SUPPORT);
+	}
+	// Forma manual (numerica). Default role = SUPPORT, mas o 6º arg pode
+	// sobrescrever. Mantida para GM/test.
+	return hire_common(sd, fd, message, AI_HIRE_ROLE_SUPPORT);
+}
+
+// (removido) ACMD_FUNC(hiretank) — virou subcomando "@hire tank".
+
 /// Phase 6 — `@dismiss`. Tears down the player's mercenary shell early.
 /// ai-server is the source of truth for owner→shell mapping; this just
 /// forwards the request.
 ACMD_FUNC(dismiss){
-	int32 r = aichrif_send_dismiss((uint32)sd->status.char_id);
+	// Phase 6.3 — `@dismiss` (no arg) drops both roles; `@dismiss tank`
+	// ou `@dismiss support` drops apenas o role indicado.
+	uint8 role_filter = AI_HIRE_ROLE_ALL;
+	if (*message != '\0') {
+		const char* m = message;
+		while (*m == ' ') m++;
+		if      (strncasecmp(m, "tank", 4) == 0)    role_filter = AI_HIRE_ROLE_TANK;
+		else if (strncasecmp(m, "support", 7) == 0) role_filter = AI_HIRE_ROLE_SUPPORT;
+		else {
+			clif_displaymessage(fd, "@dismiss [tank|support] — sem argumento dispensa ambos.");
+			return -1;
+		}
+	}
+	int32 r = aichrif_send_dismiss((uint32)sd->status.char_id, role_filter);
 	if (r != 0) {
 		clif_displaymessage(fd, "@dismiss: ai-server is offline.");
 		return -1;
 	}
-	// Phase 6 — clear the soft-dedupe variable used by the NPC and the
-	// Voucher_Adventurer script so the player can re-hire immediately.
-	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), 0);
+	int32 cid = sd->status.char_id;
+	if (role_filter == AI_HIRE_ROLE_ALL || role_filter == AI_HIRE_ROLE_SUPPORT) {
+		pc_setglobalreg(sd, add_str("ADV_HIRE_SUP_UNTIL"), 0);
+		Sql_Query(mmysql_handle,
+			"DELETE FROM dro_merc_contracts WHERE char_id=%d AND role=%u",
+			cid, AI_HIRE_ROLE_SUPPORT);
+	}
+	if (role_filter == AI_HIRE_ROLE_ALL || role_filter == AI_HIRE_ROLE_TANK) {
+		pc_setglobalreg(sd, add_str("ADV_HIRE_TANK_UNTIL"), 0);
+		Sql_Query(mmysql_handle,
+			"DELETE FROM dro_merc_contracts WHERE char_id=%d AND role=%u",
+			cid, AI_HIRE_ROLE_TANK);
+	}
+	// Recompute legacy ADV_HIRED_UNTIL = max(both).
+	int64 sup = pc_readglobalreg(sd, add_str("ADV_HIRE_SUP_UNTIL"));
+	int64 tnk = pc_readglobalreg(sd, add_str("ADV_HIRE_TANK_UNTIL"));
+	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), sup > tnk ? sup : tnk);
 	clif_displaymessage(fd, "@dismiss: aventureiro dispensado.");
 	return 0;
 }
