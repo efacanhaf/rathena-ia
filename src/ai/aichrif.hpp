@@ -62,6 +62,7 @@ struct ai_shell_init {
 	uint32 equip[10]; // see ai_equip_slot
 	uint32 owner_aid; // Phase 6 — 0 = autonomous, otherwise BL_PC account id
 	uint32 owner_cid; // Phase 6 — 0 = autonomous, otherwise BL_PC char_id (persistent identity)
+	uint8  role;      // Phase 6.5 — AI_HIRE_ROLE_* (only meaningful when owner_aid != 0)
 };
 int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init);
 
@@ -102,6 +103,7 @@ int32 aichrif_send_say(int32 fd, uint32 shell_id, const char* msg);
 /// Sit / stand / emote (Phase 3.5).
 int32 aichrif_send_sit(int32 fd, uint32 shell_id);
 int32 aichrif_send_stand(int32 fd, uint32 shell_id);
+int32 aichrif_send_stop_attack(int32 fd, uint32 shell_id);
 int32 aichrif_send_emote(int32 fd, uint32 shell_id, uint8 emote_id);
 
 /// Drift correction warp (Phase 3.7).

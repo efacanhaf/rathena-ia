@@ -52,6 +52,7 @@ struct shell_init_snapshot {
 	uint32 owner_aid;	// Phase 6 — preserved through respawn (mercs respawn
 						// to owner's side, not population home)
 	uint32 owner_cid;	// Phase 6 — char_id; merc is bound to char, not account
+	uint8  role;		// Phase 6.5 — AI_HIRE_ROLE_* (only meaningful when owner_aid != 0)
 };
 
 struct shell_state {
@@ -238,6 +239,9 @@ int32 aichrif_send_sit(int32 fd, uint32 shell_id){
 int32 aichrif_send_stand(int32 fd, uint32 shell_id){
 	return aichrif_send_simple_op(fd, shell_id, AI_CMD_STAND);
 }
+int32 aichrif_send_stop_attack(int32 fd, uint32 shell_id){
+	return aichrif_send_simple_op(fd, shell_id, AI_CMD_STOP_ATTACK);
+}
 
 int32 aichrif_send_warp(int32 fd, uint32 shell_id, const char* map_name, uint16 x, uint16 y){
 	g_stats.warps_drift++;
@@ -359,6 +363,7 @@ uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 	for (int es = 0; es < AI_EQ_COUNT; es++) init.equip[es] = pr.equip[es];
 	init.owner_aid  = owner_aid;
 	init.owner_cid  = owner_cid;
+	init.role       = role;
 	aichrif_send_shell_spawn(char_fd, init);
 	g_stats.spawned++;
 
@@ -399,6 +404,7 @@ uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 	for (int es = 0; es < 10; es++) st.init_snap.equip[es] = init.equip[es];
 	st.init_snap.owner_aid = owner_aid;
 	st.init_snap.owner_cid = owner_cid;
+	st.init_snap.role      = role;
 	g_shell_idx[sid] = g_shells_local.size();
 	g_shells_local.push_back(st);
 	g_merc_by_owner[mkey] = sid;
@@ -427,6 +433,7 @@ int32 aichrif_send_shell_spawn(int32 fd, const ai_shell_init& init){
 	p.dir = init.dir;
 	p.behavior_id = init.behavior_id;
 	p.tier = init.tier;
+	p.role = init.role;
 	p.base_level = init.base_level;
 	p.job_level  = init.job_level;
 	p.str_ = init.str_; p.agi_ = init.agi_; p.vit_ = init.vit_;
@@ -1076,15 +1083,22 @@ static TIMER_FUNC(aichrif_follow_timer){
 			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
 			if (mname == nullptr || mname[0] == 0) continue;
 
-			bool party_member_dead = false;
+			// Phase 6.5 — block revival only when every party member on
+			// this map is dead (full party wipe). If at least one member
+			// is alive, the merc respawns next to them. Solo run (no
+			// other party members) → no gate, normal 30s out-of-combat
+			// rule decides.
+			bool any_party_member_on_map = false;
+			bool any_party_alive_on_map = false;
 			for (uint8 i = 0; i < s.party_count; i++) {
-				if (s.party_members[i].account_id != 0
-				    && s.party_members[i].hp_pct == 0) {
-					party_member_dead = true;
+				if (s.party_members[i].account_id == 0) continue;
+				any_party_member_on_map = true;
+				if (s.party_members[i].hp_pct > 0) {
+					any_party_alive_on_map = true;
 					break;
 				}
 			}
-			if (party_member_dead) continue;
+			if (any_party_member_on_map && !any_party_alive_on_map) continue;
 
 			constexpr t_tick AI_MERC_DEAD_REVIVE_GAP_MS = 30000;
 			bool different_map = (s.cur_mapindex != s.owner_mapindex);
@@ -1267,6 +1281,21 @@ static TIMER_FUNC(aichrif_combat_timer){
 		// (Otherwise the shell could chase a mob across the map while the
 		//  owner is offline, or pick a target the owner can't see.)
 		if (s.owner_aid != 0 && !s.owner_present) continue;
+		// Owner walked in the last 2s AND has no current target → don't
+		// engage. Stops the tank from grabbing aggro on mobs the player
+		// is just running past. If owner_target_id is set, the player IS
+		// fighting (auto-attack chase counts as moving) so the tank
+		// follows them in — don't gate that case.
+		if (s.owner_aid != 0
+			&& s.owner_target_id == 0
+			&& s.last_owner_move_tick != 0
+			&& DIFF_TICK(now, s.last_owner_move_tick) < 2000) {
+			if (s.target_id != 0) {
+				s.target_id = 0;
+				aichrif_send_stop_attack(char_fd, s.shell_id);
+			}
+			continue;
+		}
 		if (s.suspended) continue;
 		// Town shells don't engage — they're meant to look like idle traffic
 		// (chat, sit, vending in Phase 3). Field/dungeon always hunt.
@@ -1279,6 +1308,19 @@ static TIMER_FUNC(aichrif_combat_timer){
 		// so wander resumes next tick.
 		if (s.enemy_count == 0) {
 			if (s.target_id != 0) s.target_id = 0;
+			// Phase 6.4 — tank with owner_target_id but mob outside scan
+			// range: walk to owner so next REPORT brings the mob into view.
+			// Without this the tank sits idle whenever the player engages
+			// from beyond the merc's enemy radius.
+			if (s.role == AI_HIRE_ROLE_TANK && s.owner_aid != 0
+			    && s.owner_target_id != 0 && s.owner_present) {
+				if (s.last_follow_tick == 0
+				    || DIFF_TICK(now, s.last_follow_tick) > 200) {
+					aichrif_send_walk_to(char_fd, s.shell_id,
+						(uint16)s.owner_x, (uint16)s.owner_y);
+					s.last_follow_tick = now;
+				}
+			}
 			continue;
 		}
 		uint8 idx = 0;
@@ -1349,6 +1391,69 @@ static TIMER_FUNC(aichrif_combat_timer){
 		}
 		if (tid == 0) continue;
 
+		// Phase 6.4 — tank combat is hand-rolled, not picker-driven, so the
+		// Provoke/BanishingPoint/OverBrand decision can use mobs-around-the-
+		// target (not mobs-around-the-tank) for the OverBrand cone gate.
+		// 700ms throttle ≈ a normal after-cast delay; matches the 250ms tick
+		// phase 4 = ~1 cast/sec spam ceiling.
+		if (s.role == AI_HIRE_ROLE_TANK) {
+			if (DIFF_TICK(now, s.last_combat_cast_tick) < 700) continue;
+			int32 dist_to_target = (int32)s.enemies[idx].distance;
+			int32 tx = (int32)s.enemies[idx].x;
+			int32 ty = (int32)s.enemies[idx].y;
+			bool target_provoked = (s.enemies[idx].statuses & AI_ST_PROVOKE) != 0;
+			// Provoke is a no-op against undead-race / undead-element / MVPs
+			// (status_change_start filters those out). Skip the cast so we
+			// don't burn a tick + 20 SP on nothing — go straight to damage.
+			constexpr uint8 RC_UNDEAD_VAL = 1;   // map.hpp e_race::RC_UNDEAD
+			constexpr uint8 ELE_UNDEAD_VAL = 9;  // map.hpp e_element::ELE_UNDEAD
+			bool target_immune_provoke =
+				   s.enemies[idx].race == RC_UNDEAD_VAL
+				|| (s.enemies[idx].element & 0x0F) == ELE_UNDEAD_VAL
+				|| (s.enemies[idx].flags & AI_ENEMY_FLAG_MVP) != 0;
+			int32 mobs_around_target = 0;
+			for (uint8 i = 0; i < s.enemy_count; i++) {
+				int32 dx_e = (int32)s.enemies[i].x - tx;
+				int32 dy_e = (int32)s.enemies[i].y - ty;
+				if (std::max(std::abs(dx_e), std::abs(dy_e)) <= 3) mobs_around_target++;
+			}
+			const char* skname;
+			uint8 sklv;
+			int32 needed_range;
+			uint8 cast_kind = AI_CAST_KIND_ID;
+			if (!target_provoked && !target_immune_provoke) {
+				skname = "SM_PROVOKE"; sklv = 10; needed_range = 9;
+			} else if (mobs_around_target >= 2) {
+				// LG_OVERBRAND is TargetType=Self, range 2, splash 3 — a
+				// directional cone in front of the caster. Cast on self
+				// (kind=2) and stand adjacent so the splash lands on the
+				// mob cluster.
+				skname = "LG_OVERBRAND"; sklv = 5; needed_range = 2;
+				cast_kind = AI_CAST_KIND_SELF;
+			} else {
+				// LG_BANISHINGPOINT is target-id ranged (range 7, single).
+				skname = "LG_BANISHINGPOINT"; sklv = 10; needed_range = 7;
+			}
+			if (dist_to_target > needed_range) {
+				// Out of cast range — close in. Walk straight to the mob,
+				// not to the owner's lead position. Engagement disables
+				// the 5-cells-ahead lead rule.
+				if (s.last_follow_tick == 0
+				    || DIFF_TICK(now, s.last_follow_tick) > 200) {
+					aichrif_send_walk_to(char_fd, s.shell_id,
+						(uint16)tx, (uint16)ty);
+					s.last_follow_tick = now;
+				}
+				continue;
+			}
+			uint32 cast_target = (cast_kind == AI_CAST_KIND_SELF) ? 0 : tid;
+			aichrif_send_cast(char_fd, s.shell_id, skname, sklv,
+				cast_kind, cast_target, 0, 0);
+			s.last_cast_tick = now;
+			s.last_combat_cast_tick = now;
+			continue;
+		}
+
 		const skill_rotation* rot = skill_picker_get(s.job);
 		const skill_entry* pick = nullptr;
 		if (rot != nullptr && DIFF_TICK(now, s.last_combat_cast_tick) > 5000) {
@@ -1388,6 +1493,12 @@ static TIMER_FUNC(aichrif_combat_timer){
 				pick->level, kind, cast_target, 0, 0);
 			s.last_cast_tick = now;
 			s.last_combat_cast_tick = now;
+		} else if (s.role == AI_HIRE_ROLE_TANK) {
+			// Tank mercs NEVER auto-attack. Aggro is generated by Provoke /
+			// BanishingPoint / OverBrand from the rotation. If the picker
+			// returned nothing this tick (cooldowns, all rates rolled fail,
+			// SP gate), idle until the next ~250ms tick — better than
+			// sticking the tanker to a random mob with melee.
 		} else if (!skill_picker_is_caster(s.job)) {
 			// Pure casters wait (SP regen, cooldown, condition flip) instead
 			// of whacking with a staff. Melee/hybrid jobs auto-attack.
@@ -1444,6 +1555,43 @@ static TIMER_FUNC(aichrif_support_timer){
 			DIFF_TICK(now, s.last_owner_move_tick) < 1000;
 		const skill_entry* pick = skill_picker_choose(*rot, ctx,
 			/*cursor=*/nullptr, &s.skill_cooldown_until, now);
+		// Phase 6.5 — fallback: skill_picker_choose evaluates conditions
+		// against the OWNER's slots in ctx, so an ALLY/PARTY entry like
+		// AL_HEAL `ally_hp_below 60` is filtered out when the owner is
+		// healthy even if a sibling merc / party member is dying. Scan
+		// the rotation a second time looking only for ALLY/PARTY entries
+		// that match against any non-owner party member, and remember
+		// which member to target.
+		uint32 ally_target_aid = 0;
+		if (pick == nullptr) {
+			for (size_t ri = 0; ri < rot->skills.size(); ri++) {
+				const skill_entry& e = rot->skills[ri];
+				if (e.target != skill_target::ALLY
+				    && e.target != skill_target::PARTY) continue;
+				if (e.rate == 0) continue;
+				if (e.state == skill_state::HAS_TARGET && !ctx.has_target) continue;
+				if (e.state == skill_state::NO_TARGET  &&  ctx.has_target) continue;
+				auto cit = s.skill_cooldown_until.find(e.skill_name);
+				if (cit != s.skill_cooldown_until.end()
+				    && DIFF_TICK(cit->second, now) > 0) continue;
+				if (e.rate < 10000 && (int32)(rnd() % 10000) >= e.rate) continue;
+				for (uint8 j = 0; j < s.party_count; j++) {
+					const auto& m = s.party_members[j];
+					if (m.account_id == 0) continue;
+					if (m.account_id == s.owner_aid) continue;
+					shell_ctx mctx = ctx;
+					mctx.owner_hp_pct   = m.hp_pct;
+					mctx.owner_sp_pct   = m.sp_pct;
+					mctx.owner_statuses = m.statuses;
+					if (skill_picker_cond_passes(e, mctx)) {
+						pick = &e;
+						ally_target_aid = m.account_id;
+						break;
+					}
+				}
+				if (pick != nullptr) break;
+			}
+		}
 		if (pick == nullptr || pick->skill_name.empty()) continue;
 		// Skip non-emergency skills while damaged or moving — but SELF
 		// target skills (Auto Guard / Endure / Reflect Shield etc) keep
@@ -1471,7 +1619,13 @@ static TIMER_FUNC(aichrif_support_timer){
 				if (s.owner_target_id == 0) continue;
 				cast_target = s.owner_target_id;
 				break;
+			case skill_target::ALLY:
 			case skill_target::PARTY: {
+				// If the fallback scan above already picked a member, use it.
+				if (ally_target_aid != 0) {
+					cast_target = ally_target_aid;
+					break;
+				}
 				// Iterate the party roster and cast on the first member
 				// whose state still matches the skill's condition (e.g.
 				// missing the buff). The picker already chose this skill
@@ -1501,7 +1655,7 @@ static TIMER_FUNC(aichrif_support_timer){
 				break;
 			}
 			default:
-				continue;	// ALLY not applicable to pure-support mercs
+				continue;	// TARGET requires owner_target_id; handled above
 		}
 		aichrif_send_cast(char_fd, s.shell_id, pick->skill_name.c_str(),
 			pick->level, kind, cast_target, 0, 0);
@@ -1604,6 +1758,7 @@ static TIMER_FUNC(aichrif_respawn_timer){
 		for (int es = 0; es < 10; es++) init.equip[es] = s.init_snap.equip[es];
 		init.owner_aid = s.init_snap.owner_aid;	// Phase 6 — preserve merc binding
 		init.owner_cid = s.init_snap.owner_cid;
+		init.role      = s.init_snap.role;
 		aichrif_send_shell_spawn(char_fd, init);
 
 		// 3. Reset transient state. cur_x/y get overwritten on next REPORT;

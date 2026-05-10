@@ -70,10 +70,26 @@ constexpr t_tick AI_OWNER_GONE_GRACE_MS = 8000;
 struct suspended_owner_t { uint32 aid; uint32 cid; };
 std::unordered_map<uint32, suspended_owner_t> g_suspended_owner;
 constexpr t_tick AI_OWNER_BACK_POLL_MS = 1000;
+
+/// Phase 6.4 — last mob the player damaged (any source: skill, ranged,
+/// splash, reflected, etc.). Used as fallback for REPORT.owner_target_id
+/// when ud.target is 0 (skill-only damage doesn't engage auto-attack).
+/// Keyed by char_id so it survives @reloadbattleconf and the like.
+struct owner_damage_t { uint32 target_id; t_tick tick; };
+std::unordered_map<uint32, owner_damage_t> g_owner_last_damage;
+constexpr t_tick AI_OWNER_DAMAGE_TTL_MS = 4000;
 }
 
 bool aishell_is_shell(uint32 account_id){
 	return account_id >= 95'000'000 && account_id < 100'000'000;
+}
+
+void aichrif_owner_dealt_damage(map_session_data* sd, block_list* target){
+	if (sd == nullptr || target == nullptr) return;
+	if (target->type != BL_MOB) return;
+	// Skip damage we caused to ourselves / our merc / party (would re-aim
+	// the tank at allies). Mobs only.
+	g_owner_last_damage[(uint32)sd->status.char_id] = { (uint32)target->id, gettick() };
 }
 
 map_session_data* aishell_find(uint32 shell_id){
@@ -293,6 +309,29 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->status.weapon = 0;
 	sd->status.shield = 0;
 	sd->status.robe = 0;
+	// Phase 6.5 — mercenary uniform. Hired shells (owner_aid != 0) get a
+	// fixed costume set so support+tank look like a matched pair regardless
+	// of base job. Stored as VIEW ids (item_db.View), not item nameids.
+	//   head_top    400446 C_Adventurer_Hat       → View 2385
+	//   head_mid    20439  C_Glow_Of_New_Year     → no view, hat effect 20
+	//   head_bottom 420385 C_Adventurer_Map       → View 2598
+	//   robe        480110 C_Adventure_Cat_Bag    → View 107
+	//   body palette 2
+	if (p->owner_aid != 0) {
+		// Role-based palette. Add new roles by extending the table — index
+		// is AI_HIRE_ROLE_* (see ai_packets.hpp). Falls back to 5 (support)
+		// for unknown roles so a stale client still gets *some* uniform.
+		static constexpr uint8 ROLE_PALETTE[] = {
+			5,	// AI_HIRE_ROLE_SUPPORT
+			3,	// AI_HIRE_ROLE_TANK
+		};
+		uint8 pal = (p->role < std::size(ROLE_PALETTE)) ? ROLE_PALETTE[p->role] : 5;
+		sd->status.clothes_color = pal;
+		sd->status.head_top    = 2385;	// 400446 C_Adventurer_Hat
+		sd->status.head_mid    = 1756;	// 31514  C_American_S_hair
+		sd->status.head_bottom = 2598;	// 420385 C_Adventurer_Map
+		sd->status.robe        = 107;	// 480110 C_Adventure_Cat_Bag
+	}
 	sd->status.body = p->class_; // pc_jobchange sets body = class_; mirror that
 	sd->status.base_level = 1;
 	sd->status.job_level = 1;
@@ -515,9 +554,20 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 #if PACKETVER >= 20151001
 	clif_changelook(sd, LOOK_HAIR, sd->vd.look[LOOK_HAIR]);
 #endif
-	clif_changelook(sd, LOOK_CLOTHES_COLOR, sd->vd.look[LOOK_CLOTHES_COLOR]);
 	clif_changelook(sd, LOOK_BODY2, sd->vd.look[LOOK_BODY2]);
 	clif_changelook(sd, LOOK_WEAPON, sd->status.weapon);
+	// Phase 6.5 — costume slots for hired mercs. status_calc_pc copied
+	// status.* into vd.look[*] but we still need to broadcast LOOK_HEAD_*
+	// and LOOK_ROBE; the initial spawn packet bakes in only some of them
+	// depending on PACKETVER. CLOTHES_COLOR goes LAST so prior LOOK_BODY2
+	// / LOOK_HEAD_* updates don't clobber the palette client-side.
+	if (p->owner_aid != 0) {
+		clif_changelook(sd, LOOK_HEAD_TOP,    sd->status.head_top);
+		clif_changelook(sd, LOOK_HEAD_MID,    sd->status.head_mid);
+		clif_changelook(sd, LOOK_HEAD_BOTTOM, sd->status.head_bottom);
+		clif_changelook(sd, LOOK_ROBE,        sd->status.robe);
+	}
+	clif_changelook(sd, LOOK_CLOTHES_COLOR, sd->vd.look[LOOK_CLOTHES_COLOR]);
 
 	g_shells[p->shell_id] = sd;
 	if (p->owner_aid != 0) {
@@ -755,6 +805,22 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 			p.owner_sp_pct = (uint16)((osd->battle_status.sp * 100) / osp_max);
 			p.owner_statuses = ai_collect_statuses(osd);
 			p.owner_target_id = (uint32)osd->ud.target;	// 0 if not engaging
+			// Phase 6.4 — fallback: if the player isn't auto-attacking
+			// (ud.target == 0) but recently damaged a mob via skill /
+			// ranged / splash, treat that mob as the owner's combat
+			// target. Without this the tank ignores everything the
+			// player kills with skills only.
+			if (p.owner_target_id == 0) {
+				auto dit = g_owner_last_damage.find((uint32)osd->status.char_id);
+				if (dit != g_owner_last_damage.end()
+				    && DIFF_TICK(gettick(), dit->second.tick) < AI_OWNER_DAMAGE_TTL_MS) {
+					// Confirm the mob is still alive on this map.
+					block_list* tbl = map_id2bl(dit->second.target_id);
+					if (tbl != nullptr && tbl->type == BL_MOB && !status_isdead(*tbl)) {
+						p.owner_target_id = (uint32)dit->second.target_id;
+					}
+				}
+			}
 			g_owner_seen_once[shell_id] = true;
 			g_owner_last_seen_tick[shell_id] = gettick();
 		} else if (g_owner_seen_once[shell_id]) {
@@ -790,7 +856,16 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 				map_session_data* msd = pd->data[i].sd;
 				if (msd == nullptr) continue;
 				if (msd->status.account_id == sd->status.account_id) continue;	// skip self
-				if (aishell_is_shell((uint32)msd->status.account_id)) continue;	// skip other shells
+				// Phase 6.5 — only include party members on the same map as
+				// the merc. Members on other maps can't be buffed (out of
+				// range for AL_HEAL etc.) and shouldn't count toward the
+				// "is anyone alive on this map" revival gate.
+				if (msd->mapindex != sd->mapindex) continue;
+				// Phase 6.5 — sibling mercs (e.g. support+tank pair owned
+				// by the same player) ARE valid heal/res/buff targets.
+				// Population shells never get added to a player's party so
+				// they won't show up here even without the explicit skip
+				// that used to exclude them.
 				PACKET_AI_PARTY_MEMBER& m = p.party_members[idx];
 				m.account_id = (uint32)msd->status.account_id;
 				uint32 mhp_max = msd->battle_status.max_hp ? msd->battle_status.max_hp : 1;

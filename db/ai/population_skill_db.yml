@@ -1379,18 +1379,12 @@ Body:
       # -- reactive defense --
       - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
       - { SkillId: LG_REFLECTDAMAGE,   Level: 5,  Rate: 10000, Target: 1, Condition: melee_attacked, Cooldown: 60000 }
-      # -- offense (combat tick — round-robin) --
-      - { SkillId: LG_SHIELDPRESS,     Level: 10, Rate: 10000 }
-      - { SkillId: LG_BANISHINGPOINT,  Level: 10, Rate: 9000  }
-      - { SkillId: LG_CANNONSPEAR,     Level: 5,  Rate: 8000, Condition: distance_above, CondValue: 3 }
-      - { SkillId: LG_OVERBRAND,       Level: 5,  Rate: 8000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_MOONSLASHER,     Level: 5,  Rate: 7000, Condition: enemy_count_nearby, CondValue: 3 }
-      - { SkillId: LG_EARTHDRIVE,      Level: 5,  Rate: 6000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_RAYOFGENESIS,    Level: 10, Rate: 6000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_HESPERUSLIT,     Level: 5,  Rate: 6000  }
-      - { SkillId: LG_PINPOINTATTACK,  Level: 5,  Rate: 5000  }
-      - { SkillId: PA_SHIELDCHAIN,     Level: 5,  Rate: 6000  }
-      - { SkillId: PA_PRESSURE,        Level: 5,  Rate: 6000  }
+      # -- offense (combat tick — Provoke for aggro, OverBrand 2+, Banishing single).
+      # No auto-attack fallback: tank-role mercs in aichrif_combat_timer skip
+      # the basic-attack path so aggro is generated only via these 3 skills.
+      - { SkillId: SM_PROVOKE,         Level: 10, Rate: 10000, Condition: not_enemy_status, CondValue: SC_PROVOKE }
+      - { SkillId: LG_OVERBRAND,       Level: 5,  Rate: 10000, Condition: enemy_count_nearby, CondValue: 2 }
+      - { SkillId: LG_BANISHINGPOINT,  Level: 10, Rate: 10000 }
   - JobId: 4073
     Skills:
       # -- passive --
@@ -1400,17 +1394,10 @@ Body:
       - { SkillId: KN_RIDING,          Level: 1,  Rate: 10000 }
       - { SkillId: AL_DP,              Level: 10, Rate: 10000 }
       - { SkillId: AL_DEMONBANE,       Level: 10, Rate: 10000 }
+      # -- offense (combat tick — Provoke for aggro, OverBrand 2+, Banishing single).
+      - { SkillId: SM_PROVOKE,         Level: 10, Rate: 10000, Condition: not_enemy_status, CondValue: SC_PROVOKE }
+      - { SkillId: LG_OVERBRAND,       Level: 5,  Rate: 10000, Condition: enemy_count_nearby, CondValue: 2 }
       - { SkillId: LG_BANISHINGPOINT,  Level: 10, Rate: 10000 }
-      - { SkillId: LG_CANNONSPEAR,     Level: 5,  Rate: 8000, Condition: distance_above, CondValue: 3 }
-      - { SkillId: LG_OVERBRAND,       Level: 5,  Rate: 8000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_RAYOFGENESIS,    Level: 10, Rate: 7000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_SHIELDPRESS,     Level: 10, Rate: 6000  }
-      - { SkillId: LG_MOONSLASHER,     Level: 5,  Rate: 5000, Condition: enemy_count_nearby, CondValue: 3 }
-      - { SkillId: LG_EARTHDRIVE,      Level: 5,  Rate: 5000, Condition: enemy_count_nearby, CondValue: 2 }
-      - { SkillId: LG_HESPERUSLIT,     Level: 5,  Rate: 5000  }
-      - { SkillId: LG_PINPOINTATTACK,  Level: 5,  Rate: 4000  }
-      - { SkillId: PA_SHIELDCHAIN,     Level: 5,  Rate: 5000  }
-      - { SkillId: PA_PRESSURE,        Level: 5,  Rate: 5000  }
       - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 1, Condition: hp_below, CondValue: 40 }
       - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 2, Condition: ally_hp_below, CondValue: 60 }
       - { SkillId: 255,                Level: 5,  Rate: 8000, Target: 2, Condition: not_ally_status, CondValue: SC_DEVOTION }

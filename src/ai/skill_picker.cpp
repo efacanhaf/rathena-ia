@@ -389,14 +389,28 @@ static bool cond_passes(const skill_entry& e, const shell_ctx& ctx){
 			if (bit == 0) return false;
 			return (ctx.owner_statuses & bit) == 0;
 		}
+		// Phase 6.5 — ALLY conditions piggy-back on the owner_* slots in
+		// shell_ctx. The support tick rebinds owner_hp_pct / owner_statuses
+		// per party member during iteration (see aichrif_support_timer
+		// case skill_target::ALLY/PARTY) so each member is checked against
+		// its own state.
+		case skill_cond::ALLY_HP_BELOW:
+			return ctx.owner_present && (int32)ctx.owner_hp_pct < e.cond_value_num;
+		case skill_cond::ALLY_STATUS: {
+			if (!ctx.owner_present) return false;
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return false;
+			return (ctx.owner_statuses & bit) != 0;
+		}
+		case skill_cond::NOT_ALLY_STATUS: {
+			if (!ctx.owner_present) return false;
+			uint32 bit = status_name_to_bit(e.cond_value_str);
+			if (bit == 0) return false;
+			return (ctx.owner_statuses & bit) == 0;
+		}
 		// Phase 3 stubs — these conditions need extra REPORT fields that
 		// haven't shipped yet. Return FALSE so a skill gated on one of
-		// them stays inert until we implement it. Old behavior was
-		// `return true` which made the gate a no-op and caused skills
-		// like CR_DEFENDER (range_attacked) to cast unconditionally.
-		case skill_cond::ALLY_STATUS:
-		case skill_cond::NOT_ALLY_STATUS:
-		case skill_cond::ALLY_HP_BELOW:
+		// them stays inert until we implement it.
 		case skill_cond::HAS_SPHERE:
 		case skill_cond::ENEMY_CASTING:
 		case skill_cond::ENEMY_CASTING_GROUND:

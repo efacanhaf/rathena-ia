@@ -38,7 +38,7 @@ struct PACKET_AI_SHELL_SPAWN_S {
 	uint8  dir;          // facing 0..7
 	uint8  behavior_id;  // ai-server-side enum (Phase 2)
 	uint8  tier;         // 0=town, 1=field, 2=dungeon (Phase 3.12 stat ramp)
-	uint8  pad;
+	uint8  role;         // Phase 6.5 — AI_HIRE_ROLE_* (was pad)
 	// Phase 6 — mercenary mode. 0 = autonomous shell (population spawner);
 	// non-zero = the BL_PC account_id this shell is hired by. Map-server
 	// resolves the owner via map_id2sd at REPORT time and ai-server uses
