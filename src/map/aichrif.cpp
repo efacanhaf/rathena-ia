@@ -179,27 +179,39 @@ static int32 aichrif_restore_callback(map_session_data* sd, va_list ap){
 	Sql_FreeResult(mmysql_handle);
 
 	time_t now = time(nullptr);
-	int32 remaining_sec = (int32)(expires_at - now);
-	if (remaining_sec <= 0) {
-		Sql_Query(mmysql_handle,
-			"DELETE FROM dro_merc_contracts WHERE char_id = %u", cid);
-		pc_setglobalreg(sd, hu_key, 0);
-		return 0;
+	bool permanent = (expires_at == 0);
+	int32 remaining_min = 0;
+	uint32 dur_ms = 0;
+	if (!permanent) {
+		int32 remaining_sec = (int32)(expires_at - now);
+		if (remaining_sec <= 0) {
+			Sql_Query(mmysql_handle,
+				"DELETE FROM dro_merc_contracts WHERE char_id = %u", cid);
+			pc_setglobalreg(sd, hu_key, 0);
+			return 0;
+		}
+		remaining_min = (remaining_sec + 59) / 60;
+		dur_ms = (uint32)remaining_min * 60u * 1000u;
 	}
-	int32 remaining_min = (remaining_sec + 59) / 60;
 	const char* mname = mapindex_id2name(sd->mapindex);
 	if (mname == nullptr) return 0;
 	if (aichrif_send_hire(
 			(uint32)sd->status.account_id, cid, job, tier,
 			mname, (uint16)sd->x, (uint16)sd->y,
-			(uint32)remaining_min * 60u * 1000u,
-			blvl, jlvl, role) != 0)
+			dur_ms, blvl, jlvl, role) != 0)
 		return 0;
-	Sql_Query(mmysql_handle,
-		"UPDATE dro_merc_contracts SET hired_at = %lld, duration_min = %d "
-		"WHERE char_id = %u",
-		(long long)now, remaining_min, cid);
-	pc_setglobalreg(sd, hu_key, (int64)expires_at);
+	if (permanent) {
+		Sql_Query(mmysql_handle,
+			"UPDATE dro_merc_contracts SET hired_at = %lld WHERE char_id = %u",
+			(long long)now, cid);
+		pc_setglobalreg(sd, hu_key, (int64)0x7FFFFFFF);
+	} else {
+		Sql_Query(mmysql_handle,
+			"UPDATE dro_merc_contracts SET hired_at = %lld, duration_min = %d "
+			"WHERE char_id = %u",
+			(long long)now, remaining_min, cid);
+		pc_setglobalreg(sd, hu_key, (int64)expires_at);
+	}
 	clif_displaymessage(sd->fd,
 		"[DimensionsRO] Aventureiro restaurado apos reinicializacao do servidor.");
 	return 1;
@@ -421,22 +433,13 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	// the calc is done.
 	map_addiddb(sd);
 
-	// Canonical recalc — exactly what pc_authok runs after char load.
-	status_calc_pc(sd, SCO_FIRST);
-
-	// Make sure the shell is alive after the recalc and has the AI mob bits
-	// status_check_skilluse expects (MD_CANATTACK).
-	sd->battle_status.hp = sd->battle_status.max_hp;
-	sd->battle_status.sp = sd->battle_status.max_sp;
-	sd->status.hp = sd->battle_status.max_hp;
-	sd->status.sp = sd->battle_status.max_sp;
-
 	// Phase 6.2 — auto-mount for spear/shield tanker classes. Knight line
-	// rides a Peco; Rune Knight rides a Dragon. Setting the option bit
-	// before clif_spawn means the merc shows up already mounted in the
-	// client (changeoption broadcast after spawn would also work, but is
-	// an extra packet). status_calc_pc has run, so KN_RIDING is in the
-	// skill tree — purely cosmetic check, the option drives the visual.
+	// rides a Peco; Rune Knight rides a Dragon. The option bit MUST be
+	// set BEFORE status_calc_pc — status_calc_speed reads sc.option to
+	// apply the +25% mounted speed bonus. Setting it after the recalc
+	// (the original placement) left the merc walking at unmounted speed
+	// until the next status recalc — which only happens on damage/buff
+	// events.
 	switch (sd->status.class_) {
 		case JOB_KNIGHT:
 		case JOB_KNIGHT2:
@@ -457,11 +460,30 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 		default:
 			break;
 	}
+
+	// Canonical recalc — exactly what pc_authok runs after char load.
+	status_calc_pc(sd, SCO_FIRST);
+
+	// Make sure the shell is alive after the recalc and has the AI mob bits
+	// status_check_skilluse expects (MD_CANATTACK).
+	sd->battle_status.hp = sd->battle_status.max_hp;
+	sd->battle_status.sp = sd->battle_status.max_sp;
+	sd->status.hp = sd->battle_status.max_hp;
+	sd->status.sp = sd->battle_status.max_sp;
 	sd->base_status.mode   = (e_mode)(sd->base_status.mode   | MD_CANMOVE | MD_CANATTACK);
 	sd->battle_status.mode = (e_mode)(sd->battle_status.mode | MD_CANMOVE | MD_CANATTACK);
 	if (p->speed > 0) {
-		sd->base_status.speed = p->speed;
-		sd->battle_status.speed = p->speed;
+		// Phase 6.2 — mounted classes already had the +25% speed bonus
+		// applied by status_calc_pc / status_calc_speed (val=25 when
+		// OPTION_RIDING|OPTION_DRAGON is set). The profile speed is the
+		// unmounted base, so apply the same -25% factor manually here
+		// or status_calc_pc's bonus gets overwritten and the tanker
+		// walks at unmounted speed.
+		int32 final_speed = p->speed;
+		if (sd->sc.option & (OPTION_RIDING | OPTION_DRAGON1 | OPTION_DRAGON))
+			final_speed = final_speed * 75 / 100;
+		sd->base_status.speed = (uint16)final_speed;
+		sd->battle_status.speed = (uint16)final_speed;
 	}
 
 	status_set_viewdata(sd, sd->status.class_);

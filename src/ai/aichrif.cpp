@@ -132,6 +132,13 @@ struct shell_state {
 	// resurrection we shift hire_expires_at by the time spent dead so
 	// the player isn't billed for downtime.
 	t_tick died_at_tick;
+	// Phase 6.3 — out-of-combat tracking. Set on the first REPORT where
+	// the owner has no target AND hasn't taken damage in the last 5s;
+	// cleared whenever the owner re-engages. Used by the dead-merc
+	// respawn gate: the merc only revives 30s after the owner has been
+	// continuously out of combat. Means: if the owner is still fighting
+	// the next pull, the corpse stays put.
+	t_tick out_of_combat_since_tick;
 	// Phase 6 — owner logged out. Map-server has already despawned the
 	// shell; we keep the shell_state alive so we can re-spawn at the
 	// owner's location once they reconnect (PACKET_AI_OWNER_BACK).
@@ -655,6 +662,19 @@ static int32 aichrif_parse_report(int32 fd){
 			s.prev_owner_x = p->owner_x;
 			s.prev_owner_y = p->owner_y;
 			s.prev_owner_hp_pct = p->owner_hp_pct;
+
+			// Phase 6.3 — track when the owner became "out of combat" so
+			// the dead-merc respawn gate can require N seconds of peace.
+			constexpr t_tick AI_OWNER_DAMAGE_GRACE_MS = 5000;
+			bool owner_in_combat =
+				(p->owner_target_id != 0) ||
+				(s.last_owner_damage_tick != 0 &&
+					DIFF_TICK(now_r, s.last_owner_damage_tick) < AI_OWNER_DAMAGE_GRACE_MS);
+			if (owner_in_combat) {
+				s.out_of_combat_since_tick = 0;
+			} else if (s.out_of_combat_since_tick == 0) {
+				s.out_of_combat_since_tick = now_r;
+			}
 		}
 		s.last_report_tick = now_r;
 	}
@@ -997,32 +1017,41 @@ static TIMER_FUNC(aichrif_follow_timer){
 			s.owner_cid = 0;
 			continue;
 		}
-		// Phase 6 — dead merc waits for owner. If the owner respawns at
-		// save point (different map from where the merc died) we revive
-		// the merc next to them via the despawn+spawn cycle. Otherwise
-		// the corpse stays on the map for a player to Resurrect.
+		// Phase 6 — dead merc revival.
+		//
+		// Two paths:
+		//   (a) Owner moved to a DIFFERENT map (e.g. respawned at save).
+		//       Revive immediately next to them — corpse on old map is
+		//       inaccessible anyway.
+		//   (b) Owner is on the SAME map. Wait 30s of *continuous*
+		//       out-of-combat (no target, no recent damage) before
+		//       reviving, so the merc doesn't pop back mid-fight and
+		//       insta-die again. Player can still Resurrect the corpse
+		//       in this window — AI_EVT_RESURRECTED clears `hp == 0`.
 		if (s.hp == 0) {
 			if (s.respawn_at_tick != 0) continue;	// already scheduled
 			if (!s.owner_present) continue;
 			if (s.cur_mapindex == 0 || s.owner_mapindex == 0) continue;
-			// Trigger if owner moved to a different map OR owner just
-			// respawned in place (HP went 0 → positive on same map).
-			bool same_map_respawn = (s.cur_mapindex == s.owner_mapindex
-				&& s.last_owner_damage_tick != 0	// HP delta tracked
-				&& s.owner_hp_pct >= 90);			// full or near-full → just respawned
-			if (s.cur_mapindex == s.owner_mapindex && !same_map_respawn) continue;
 			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
 			if (mname == nullptr || mname[0] == 0) continue;
+
+			constexpr t_tick AI_MERC_DEAD_REVIVE_GAP_MS = 30000;
+			bool different_map = (s.cur_mapindex != s.owner_mapindex);
+			bool owner_idle_long_enough =
+				(s.out_of_combat_since_tick != 0 &&
+					DIFF_TICK(now, s.out_of_combat_since_tick) >= AI_MERC_DEAD_REVIVE_GAP_MS);
+			if (!different_map && !owner_idle_long_enough) continue;
+
 			// Override the snapshot's spawn point to the owner's current
-			// location. respawn_timer reads init_snap.map_name/x/y for
-			// the fresh spawn.
+			// location. respawn_timer reads init_snap.map_name/x/y.
 			s.init_snap.map_name = mname;
 			s.init_snap.x = s.owner_x;
 			s.init_snap.y = s.owner_y;
 			s.respawn_at_tick = now;
 			s.died_at_tick = 0;
-			ShowStatus("ai-server: merc %u — owner moved to %s; reviving next to owner.\n",
-				s.shell_id, mname);
+			ShowStatus("ai-server: merc %u — reviving next to owner on %s (%s).\n",
+				s.shell_id, mname,
+				different_map ? "owner zoned" : "owner out of combat");
 			continue;
 		}
 		if (!s.owner_present) continue;	// owner offline / zoning
@@ -1051,6 +1080,30 @@ static TIMER_FUNC(aichrif_follow_timer){
 		int32 cheb = std::max(std::abs(dx), std::abs(dy));
 		if (cheb <= 3) continue;	// already close enough
 		if (s.last_follow_tick != 0 && DIFF_TICK(now, s.last_follow_tick) < 700) continue;
+		// Phase 6.3 — if the merc is actively engaging a mob (combat tick
+		// gave it a target), let it pursue without warping back. The
+		// tanker would otherwise oscillate: combat tick walks to mob,
+		// follow tick warps to owner, combat tick walks again, etc.
+		// The warp safety net only kicks in when the gap gets so large
+		// that it's clearly Fly Wing / @warp / random teleport.
+		constexpr int32 AI_FOLLOW_PURSUIT_TOLERANCE = 25;
+		if (s.target_id != 0 && cheb < AI_FOLLOW_PURSUIT_TOLERANCE) continue;
+		// Phase 6.3 — if the owner moved out of WALK_TO range (Fly Wing,
+		// teleport scroll, or just walked far while the merc was busy),
+		// the path-find on map-server can fail or stop short and the
+		// merc gets stuck. Warp instead. Threshold is wider than before
+		// (was 14) so the merc has room to pursue mobs on its own.
+		constexpr int32 AI_FOLLOW_WARP_GAP = 25;
+		if (cheb >= AI_FOLLOW_WARP_GAP) {
+			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
+			if (mname && mname[0]) {
+				aichrif_send_warp(char_fd, s.shell_id, mname,
+					(uint16)std::max<int32>(1, (int32)s.owner_x - 2),
+					(uint16)std::max<int32>(1, (int32)s.owner_y - 2));
+				s.last_follow_tick = now;
+			}
+			continue;
+		}
 		// Trail position: stand 2 cells in the direction the shell came
 		// from (just behind the owner). Doesn't matter much; map-server
 		// nudges to walkable.

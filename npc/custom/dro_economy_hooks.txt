@@ -63,13 +63,17 @@ OnPCLoginEvent:
 	if ($dro_ai_boot_ts <= 0 || $dro_ai_boot_ts <= .@hired_at[0]) end;
 
 	.@now_ts = gettimetick(2);
-	.@remaining_sec = .@expires_at[0] - .@now_ts;
-	if (.@remaining_sec <= 0) {
-		// Contrato expirou durante o downtime. Sem restore, sem refund —
-		// player ja teve o tempo pago.
-		query_sql("DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0));
-		ADV_HIRED_UNTIL = 0;
-		end;
+	.@permanent = (.@expires_at[0] == 0);
+	.@remaining_min = 0;
+	if (!.@permanent) {
+		.@remaining_sec = .@expires_at[0] - .@now_ts;
+		if (.@remaining_sec <= 0) {
+			// Contrato expirou durante o downtime.
+			query_sql("DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0));
+			ADV_HIRED_UNTIL = 0;
+			end;
+		}
+		.@remaining_min = (.@remaining_sec + 59) / 60;
 	}
 
 	// @hire exige party. Se nao tem, deixa pendente — proximo login ou
@@ -79,13 +83,14 @@ OnPCLoginEvent:
 		end;
 	}
 
-	.@remaining_min = (.@remaining_sec + 59) / 60;
 	atcommand "@hire " + .@job[0] + " " + .@tier[0] + " " + .@remaining_min + " " + .@blvl[0] + " " + .@jlvl[0] + " " + .@role[0];
 
-	// Atualiza hired_at pra nao re-disparar orphan no proximo login se
-	// o ai-server nao crashou de novo. duration_min reflete o tempo que
-	// efetivamente sobrou do contrato.
-	query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0));
-	dispbottom "[DimensionsRO] Aventureiro restaurado apos reinicializacao (" + .@remaining_min + " min restantes).";
+	if (.@permanent) {
+		query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + " WHERE char_id=" + getcharid(0));
+		dispbottom "[DimensionsRO] Aventureiro restaurado apos reinicializacao (sem expiracao).";
+	} else {
+		query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0));
+		dispbottom "[DimensionsRO] Aventureiro restaurado apos reinicializacao (" + .@remaining_min + " min restantes).";
+	}
 	end;
 }

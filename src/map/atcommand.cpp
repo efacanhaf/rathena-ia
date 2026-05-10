@@ -11528,9 +11528,38 @@ static int32 hire_common(map_session_data* sd, int32 fd, const char* message, ui
 	// Phase 6 — soft-dedupe variable used by the NPC and Voucher_Adventurer
 	// script. Optimistic: ai-server's anti-stack is the real authority, but
 	// this gives the script side fast feedback without a round-trip.
-	if (dur_ms > 0)
-		pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"),
-			(int)time(nullptr) + (int)(dur_ms / 1000));
+	// For dur_ms == 0 (no-arg @hire), set ADV_HIRED_UNTIL very far in the
+	// future so the OnPCLoginEvent restore treats the merc as still
+	// active. The contract row's expires_at = 0 is the canonical "no
+	// expiry" marker for the restore code.
+	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"),
+		(dur_ms > 0)
+			? (int)time(nullptr) + (int)(dur_ms / 1000)
+			: 0x7FFFFFFF);
+	// Phase 6.2 — persist contract so the silent auto-restore on
+	// ai-server reboot (map/aichrif.cpp::aichrif_restore_online_mercs)
+	// and the OnPCLoginEvent restore in dro_economy_hooks.txt have a
+	// row to read. The NPC also writes here via REPLACE INTO; both
+	// paths converge on the same table. paid_zeny/paid_voucher = 0
+	// because @hire is GM/test entry — the NPC overwrites with the
+	// correct payment values on its own REPLACE.
+	{
+		time_t now_ts = time(nullptr);
+		long long expires = (dur_ms > 0)
+			? (long long)now_ts + (long long)(dur_ms / 1000)
+			: 0LL;
+		Sql_Query(mmysql_handle,
+			"REPLACE INTO dro_merc_contracts "
+			"(char_id, account_id, role, job, tier, base_level, job_level, "
+			" paid_zeny, paid_voucher, duration_min, hired_at, expires_at) "
+			"VALUES (%u, %u, %u, %u, %u, %u, %u, 0, 0, %u, %lld, %lld)",
+			(uint32)sd->status.char_id, (uint32)sd->status.account_id,
+			(uint32)role_arg, (uint32)job, (uint32)tier,
+			(uint32)blvl_override, (uint32)jlvl_override,
+			(uint32)dur_min,
+			(long long)now_ts,
+			expires);
+	}
 	// Phase 6 — no success chat line. The NPC shows its own confirmation
 	// and direct @hire users see the merc spawn shortly after.
 	return 0;

@@ -424,9 +424,12 @@ Body:
       # Reativa via range_attacked.
       - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
       - { SkillId: CR_SPEARQUICKEN,    Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
-      # -- owner protection (tank merc only — autonomous shells have owner_aid=0) --
+      # -- owner protection (tank merc only — autonomous shells have owner_aid=0).
+      # Devotion (255) usa owner_hp_below 99 pra entrar no filtro de
+      # emergencia do support tick — sem isso ela so dispara fora de
+      # combate, exatamente quando o owner nao precisa.
       - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 50 }
-      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Cooldown: 30000 }
+      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 99, Cooldown: 30000 }
       - { SkillId: CR_PROVIDENCE,      Level: 5,  Rate: 10000, Target: 3, Cooldown: 280000 }
       # -- reactive defense --
       - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
@@ -780,9 +783,10 @@ Body:
       # -- self defensive buffs (no SC — guarded by cooldown) --
       - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
       - { SkillId: CR_SPEARQUICKEN,    Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
-      # -- owner protection (tank merc only) --
+      # -- owner protection (tank merc only). Devotion (255) usa
+      # owner_hp_below 99 pra entrar no filtro de emergencia.
       - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 55 }
-      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Cooldown: 30000 }
+      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 99, Cooldown: 30000 }
       - { SkillId: CR_PROVIDENCE,      Level: 5,  Rate: 10000, Target: 3, Cooldown: 280000 }
       # -- reactive defense --
       - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
@@ -1367,9 +1371,10 @@ Body:
       - { SkillId: CR_REFLECTSHIELD,   Level: 10, Rate: 10000, Target: 1, Cooldown: 280000 }
       - { SkillId: LG_PRESTIGE,        Level: 5,  Rate: 10000, Target: 1, Cooldown: 60000 }
       - { SkillId: LG_FORCEOFVANGUARD, Level: 5,  Rate: 10000, Target: 1, Cooldown: 280000 }
-      # -- owner protection (tank merc only) --
+      # -- owner protection (tank merc only). Devotion (255) usa
+      # owner_hp_below 99 pra entrar no filtro de emergencia.
       - { SkillId: AL_HEAL,            Level: 10, Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 60 }
-      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Cooldown: 30000 }
+      - { SkillId: 255,                Level: 5,  Rate: 10000, Target: 3, Condition: owner_hp_below, CondValue: 99, Cooldown: 30000 }
       - { SkillId: LG_PIETY,           Level: 5,  Rate: 10000, Target: 3, Cooldown: 280000 }
       # -- reactive defense --
       - { SkillId: CR_DEFENDER,        Level: 5,  Rate: 10000, Target: 1, Condition: range_attacked, Cooldown: 30000 }
