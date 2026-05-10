@@ -267,13 +267,17 @@ struct PACKET_AI_SHELL_REPORT_S {
 
 /// PACKET_AI_DISMISS_REQUEST (0x2b45) — map -> char -> ai.
 /// Player runs @dismiss / NPC -> ai-server tears down their merc shell
-/// without waiting for the contract timer. No ack. Routed by char_id —
-/// each character owns its own merc independently.
+/// without waiting for the contract timer. No ack. Routed by char_id;
+/// since Phase 6.3 each char can have one merc per role (support, tank)
+/// so we also carry the role to dismiss. role == 0xFF = ALL roles.
 struct PACKET_AI_DISMISS_REQUEST_S {
 	uint16 cmd;
 	uint16 len;
 	uint32 owner_cid;
+	uint8  role;       // AI_HIRE_ROLE_SUPPORT, AI_HIRE_ROLE_TANK, or 0xFF for ALL
+	uint8  pad[3];
 };
+constexpr uint8 AI_HIRE_ROLE_ALL = 0xFF;
 
 /// PACKET_AI_OWNER_BACK (0x2b54) — map -> char -> ai.
 /// Phase 6 — fired by map-server's suspended-owner poll when the merc's

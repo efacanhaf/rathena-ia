@@ -47,50 +47,61 @@ OnPCLoginEvent:
 		dispbottom "[DimensionsRO] +2 Cash de bonus diario. Saldo: " + (#CASHPOINTS) + " Cash.";
 	}
 
-	// Orphan merc restore.
-	if (ADV_HIRED_UNTIL <= gettimetick(2)) end;
+	// Orphan merc restore. Phase 6.3: itera cada role separadamente.
+	if (ADV_HIRE_SUP_UNTIL <= gettimetick(2) && ADV_HIRE_TANK_UNTIL <= gettimetick(2) && ADV_HIRED_UNTIL <= gettimetick(2)) end;
+	if ($dro_ai_boot_ts <= 0) end;
 
 	query_sql("SELECT role, job, tier, base_level, job_level, hired_at, expires_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
 		.@role, .@job, .@tier, .@blvl, .@jlvl, .@hired_at, .@expires_at);
-	if (getarraysize(.@role) == 0) {
-		// ADV_HIRED_UNTIL setado mas nenhuma linha — hire pre-persistencia.
-		// Limpa o estado pra player nao ficar travado.
+	.@n = getarraysize(.@role);
+	if (.@n == 0) {
+		// Nenhuma linha — hire pre-persistencia. Limpa flags.
 		ADV_HIRED_UNTIL = 0;
+		ADV_HIRE_SUP_UNTIL = 0;
+		ADV_HIRE_TANK_UNTIL = 0;
 		end;
 	}
 
-	// Orfao se ai-server bootou *depois* do hire.
-	if ($dro_ai_boot_ts <= 0 || $dro_ai_boot_ts <= .@hired_at[0]) end;
+	if (getcharid(1) == 0) {
+		dispbottom "[DimensionsRO] Aventureiros perdidos em uma reinicializacao. Entre em uma party e relogue (ou visite o Treinador) para restaurar.";
+		end;
+	}
 
 	.@now_ts = gettimetick(2);
-	.@permanent = (.@expires_at[0] == 0);
-	.@remaining_min = 0;
-	if (!.@permanent) {
-		.@remaining_sec = .@expires_at[0] - .@now_ts;
-		if (.@remaining_sec <= 0) {
-			// Contrato expirou durante o downtime.
-			query_sql("DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0));
-			ADV_HIRED_UNTIL = 0;
-			end;
+	.@restored = 0;
+	.@max_until = 0;
+	for (.@i = 0; .@i < .@n; .@i++) {
+		// Orphan check por linha — so restaura se a IA bootou depois do hire.
+		if ($dro_ai_boot_ts <= .@hired_at[.@i]) continue;
+
+		.@permanent = (.@expires_at[.@i] == 0);
+		.@remaining_min = 0;
+		if (!.@permanent) {
+			.@remaining_sec = .@expires_at[.@i] - .@now_ts;
+			if (.@remaining_sec <= 0) {
+				query_sql("DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role[.@i]);
+				continue;
+			}
+			.@remaining_min = (.@remaining_sec + 59) / 60;
 		}
-		.@remaining_min = (.@remaining_sec + 59) / 60;
-	}
+		atcommand "@hire " + .@job[.@i] + " " + .@tier[.@i] + " " + .@remaining_min + " " + .@blvl[.@i] + " " + .@jlvl[.@i] + " " + .@role[.@i];
 
-	// @hire exige party. Se nao tem, deixa pendente — proximo login ou
-	// visita ao Treinador resolve.
-	if (getcharid(1) == 0) {
-		dispbottom "[DimensionsRO] Aventureiro perdido em uma reinicializacao. Entre em uma party e relogue (ou visite o Treinador) para restaura-lo.";
-		end;
-	}
+		.@until_val = .@permanent ? 2147483647 : .@expires_at[.@i];
+		if (.@role[.@i] == 1)
+			ADV_HIRE_TANK_UNTIL = .@until_val;
+		else
+			ADV_HIRE_SUP_UNTIL = .@until_val;
+		if (.@until_val > .@max_until) .@max_until = .@until_val;
 
-	atcommand "@hire " + .@job[0] + " " + .@tier[0] + " " + .@remaining_min + " " + .@blvl[0] + " " + .@jlvl[0] + " " + .@role[0];
-
-	if (.@permanent) {
-		query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + " WHERE char_id=" + getcharid(0));
-		dispbottom "[DimensionsRO] Aventureiro restaurado apos reinicializacao (sem expiracao).";
-	} else {
-		query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0));
-		dispbottom "[DimensionsRO] Aventureiro restaurado apos reinicializacao (" + .@remaining_min + " min restantes).";
+		if (.@permanent) {
+			query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role[.@i]);
+		} else {
+			query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role[.@i]);
+		}
+		.@restored++;
 	}
+	if (.@max_until > 0) ADV_HIRED_UNTIL = .@max_until;
+	if (.@restored > 0)
+		dispbottom "[DimensionsRO] Aventureiro(s) restaurado(s) apos reinicializacao. (" + .@restored + ")";
 	end;
 }

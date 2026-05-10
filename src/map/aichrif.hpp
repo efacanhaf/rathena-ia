@@ -50,7 +50,7 @@ int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 ti
 /// Phase 6 — manual dismiss. Tears down the merc shell of `owner_cid`
 /// (char_id) without waiting for the contract timer. ai-server is the
 /// source of truth for who-owns-what, so this just forwards the request.
-int32 aichrif_send_dismiss(uint32 owner_cid);
+int32 aichrif_send_dismiss(uint32 owner_cid, uint8 role);
 
 void do_init_map_aichrif(void);
 void do_final_map_aichrif(void);

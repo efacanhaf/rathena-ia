@@ -106,12 +106,13 @@ int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 ti
 	return 0;
 }
 
-int32 aichrif_send_dismiss(uint32 owner_cid){
+int32 aichrif_send_dismiss(uint32 owner_cid, uint8 role){
 	if (char_fd < 0 || session[char_fd] == nullptr) return -1;
 	PACKET_AI_DISMISS_REQUEST_S p{};
 	p.cmd = PACKET_AI_DISMISS_REQUEST;
 	p.len = sizeof(p);
 	p.owner_cid = owner_cid;
+	p.role = role;
 	WFIFOHEAD(char_fd, sizeof(p));
 	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
 	WFIFOSET(char_fd, sizeof(p));
@@ -145,10 +146,7 @@ static void aichrif_send_pong(int32 fd, uint32 token){
 static int32 aichrif_restore_callback(map_session_data* sd, va_list ap){
 	(void)ap;
 	if (sd == nullptr) return 0;
-	int64 hu_key = add_str("ADV_HIRED_UNTIL");
-	int64 hired_until = pc_readglobalreg(sd, hu_key);
-	if (hired_until <= time(nullptr)) return 0;
-	if (sd->status.party_id == 0) return 0;
+	if (sd->status.party_id == 0) return 0;	// @hire path requires party
 
 	uint32 cid = (uint32)sd->status.char_id;
 	if (SQL_ERROR == Sql_Query(mmysql_handle,
@@ -158,63 +156,66 @@ static int32 aichrif_restore_callback(map_session_data* sd, va_list ap){
 		Sql_ShowDebug(mmysql_handle);
 		return 0;
 	}
-	if (SQL_SUCCESS != Sql_NextRow(mmysql_handle)) {
-		Sql_FreeResult(mmysql_handle);
-		return 0;
+	struct row_t { uint8 role; uint16 job; uint8 tier; uint16 blvl; uint16 jlvl; time_t expires_at; };
+	std::vector<row_t> rows;
+	while (SQL_SUCCESS == Sql_NextRow(mmysql_handle)) {
+		char* c[6];
+		for (int32 i = 0; i < 6; i++) Sql_GetData(mmysql_handle, i, &c[i], nullptr);
+		rows.push_back({
+			(uint8) atoi(c[0]), (uint16)atoi(c[1]), (uint8)atoi(c[2]),
+			(uint16)atoi(c[3]), (uint16)atoi(c[4]), (time_t)atoll(c[5])
+		});
 	}
-	char* col_role; char* col_job; char* col_tier;
-	char* col_blvl; char* col_jlvl; char* col_expires;
-	Sql_GetData(mmysql_handle, 0, &col_role,    nullptr);
-	Sql_GetData(mmysql_handle, 1, &col_job,     nullptr);
-	Sql_GetData(mmysql_handle, 2, &col_tier,    nullptr);
-	Sql_GetData(mmysql_handle, 3, &col_blvl,    nullptr);
-	Sql_GetData(mmysql_handle, 4, &col_jlvl,    nullptr);
-	Sql_GetData(mmysql_handle, 5, &col_expires, nullptr);
-	uint8  role  = (uint8) atoi(col_role);
-	uint16 job   = (uint16)atoi(col_job);
-	uint8  tier  = (uint8) atoi(col_tier);
-	uint16 blvl  = (uint16)atoi(col_blvl);
-	uint16 jlvl  = (uint16)atoi(col_jlvl);
-	time_t expires_at = (time_t)atoll(col_expires);
 	Sql_FreeResult(mmysql_handle);
+	if (rows.empty()) return 0;
 
 	time_t now = time(nullptr);
-	bool permanent = (expires_at == 0);
-	int32 remaining_min = 0;
-	uint32 dur_ms = 0;
-	if (!permanent) {
-		int32 remaining_sec = (int32)(expires_at - now);
-		if (remaining_sec <= 0) {
-			Sql_Query(mmysql_handle,
-				"DELETE FROM dro_merc_contracts WHERE char_id = %u", cid);
-			pc_setglobalreg(sd, hu_key, 0);
-			return 0;
-		}
-		remaining_min = (remaining_sec + 59) / 60;
-		dur_ms = (uint32)remaining_min * 60u * 1000u;
-	}
 	const char* mname = mapindex_id2name(sd->mapindex);
 	if (mname == nullptr) return 0;
-	if (aichrif_send_hire(
-			(uint32)sd->status.account_id, cid, job, tier,
-			mname, (uint16)sd->x, (uint16)sd->y,
-			dur_ms, blvl, jlvl, role) != 0)
-		return 0;
-	if (permanent) {
-		Sql_Query(mmysql_handle,
-			"UPDATE dro_merc_contracts SET hired_at = %lld WHERE char_id = %u",
-			(long long)now, cid);
-		pc_setglobalreg(sd, hu_key, (int64)0x7FFFFFFF);
-	} else {
-		Sql_Query(mmysql_handle,
-			"UPDATE dro_merc_contracts SET hired_at = %lld, duration_min = %d "
-			"WHERE char_id = %u",
-			(long long)now, remaining_min, cid);
-		pc_setglobalreg(sd, hu_key, (int64)expires_at);
+	int32 restored = 0;
+	int64 max_until = 0;
+	for (const auto& r : rows) {
+		bool permanent = (r.expires_at == 0);
+		int32 remaining_min = 0;
+		uint32 dur_ms = 0;
+		if (!permanent) {
+			int32 remaining_sec = (int32)(r.expires_at - now);
+			if (remaining_sec <= 0) {
+				Sql_Query(mmysql_handle,
+					"DELETE FROM dro_merc_contracts WHERE char_id=%u AND role=%u",
+					cid, (uint32)r.role);
+				continue;
+			}
+			remaining_min = (remaining_sec + 59) / 60;
+			dur_ms = (uint32)remaining_min * 60u * 1000u;
+		}
+		if (aichrif_send_hire(
+				(uint32)sd->status.account_id, cid, r.job, r.tier,
+				mname, (uint16)sd->x, (uint16)sd->y,
+				dur_ms, r.blvl, r.jlvl, r.role) != 0)
+			continue;
+		int64 until_val = permanent ? 0x7FFFFFFFLL : (int64)r.expires_at;
+		const char* role_var = (r.role == AI_HIRE_ROLE_TANK)
+			? "ADV_HIRE_TANK_UNTIL" : "ADV_HIRE_SUP_UNTIL";
+		pc_setglobalreg(sd, add_str(role_var), until_val);
+		if (until_val > max_until) max_until = until_val;
+		if (permanent) {
+			Sql_Query(mmysql_handle,
+				"UPDATE dro_merc_contracts SET hired_at=%lld WHERE char_id=%u AND role=%u",
+				(long long)now, cid, (uint32)r.role);
+		} else {
+			Sql_Query(mmysql_handle,
+				"UPDATE dro_merc_contracts SET hired_at=%lld, duration_min=%d "
+				"WHERE char_id=%u AND role=%u",
+				(long long)now, remaining_min, cid, (uint32)r.role);
+		}
+		restored++;
 	}
-	clif_displaymessage(sd->fd,
-		"[DimensionsRO] Aventureiro restaurado apos reinicializacao do servidor.");
-	return 1;
+	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), max_until);
+	if (restored > 0)
+		clif_displaymessage(sd->fd,
+			"[DimensionsRO] Aventureiro restaurado apos reinicializacao do servidor.");
+	return restored;
 }
 
 static void aichrif_restore_online_mercs(void){
@@ -564,7 +565,8 @@ void aishell_destroy(uint32 shell_id){
 // ---------------------------------------------------------------------------
 
 constexpr int16 AI_REPORT_RANGE = 20;   // wider than client AREA so shells engage early
-constexpr int32 AI_REPORT_PERIOD_MS = 1000;
+constexpr int32 AI_REPORT_PERIOD_MS = 1000;       // all shells (population + mercs)
+constexpr int32 AI_MERC_REPORT_PERIOD_MS = 200;   // hired mercs only — fast follow
 
 namespace {
 struct enemy_scan_ctx {
@@ -831,6 +833,23 @@ static TIMER_FUNC(aichrif_report_timer){
 		map_session_data* sd = kv.second;
 		if (sd == nullptr) continue;
 		aichrif_send_report(kv.first, sd);
+	}
+	return 0;
+}
+
+/// Phase 6.3 — high-frequency report ONLY for hired mercs. The follow tick
+/// reads owner_x/y from the last REPORT, and at 1000ms cadence the merc
+/// looks 1+ seconds behind the player (visible 3+ cell lag). Mercs are
+/// few (1-2 per online player), so a 200ms tick on this subset is cheap.
+static TIMER_FUNC(aichrif_merc_report_timer){
+	if (char_fd < 0 || session[char_fd] == nullptr) return 0;
+	for (auto& kv : g_shells) {
+		uint32 shell_id = kv.first;
+		auto oit = g_owner_aid.find(shell_id);
+		if (oit == g_owner_aid.end() || oit->second == 0) continue;
+		map_session_data* sd = kv.second;
+		if (sd == nullptr) continue;
+		aichrif_send_report(shell_id, sd);
 	}
 	return 0;
 }
@@ -1122,6 +1141,9 @@ void do_init_map_aichrif(void){
 	add_timer_func_list(aichrif_report_timer, "aichrif_report");
 	add_timer_interval(gettick() + AI_REPORT_PERIOD_MS, aichrif_report_timer,
 		0, 0, AI_REPORT_PERIOD_MS);
+	add_timer_func_list(aichrif_merc_report_timer, "aichrif_merc_report");
+	add_timer_interval(gettick() + AI_MERC_REPORT_PERIOD_MS, aichrif_merc_report_timer,
+		0, 0, AI_MERC_REPORT_PERIOD_MS);
 	add_timer_func_list(aichrif_owner_back_timer, "aichrif_owner_back");
 	add_timer_interval(gettick() + AI_OWNER_BACK_POLL_MS, aichrif_owner_back_timer,
 		0, 0, AI_OWNER_BACK_POLL_MS);

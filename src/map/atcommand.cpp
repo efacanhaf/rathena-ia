@@ -11525,17 +11525,21 @@ static int32 hire_common(map_session_data* sd, int32 fd, const char* message, ui
 		clif_displaymessage(fd, "@hire: ai-server is offline.");
 		return -1;
 	}
-	// Phase 6 — soft-dedupe variable used by the NPC and Voucher_Adventurer
+	// Phase 6 — soft-dedupe variables used by the NPC and Voucher_Adventurer
 	// script. Optimistic: ai-server's anti-stack is the real authority, but
 	// this gives the script side fast feedback without a round-trip.
-	// For dur_ms == 0 (no-arg @hire), set ADV_HIRED_UNTIL very far in the
-	// future so the OnPCLoginEvent restore treats the merc as still
-	// active. The contract row's expires_at = 0 is the canonical "no
-	// expiry" marker for the restore code.
-	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"),
-		(dur_ms > 0)
-			? (int)time(nullptr) + (int)(dur_ms / 1000)
-			: 0x7FFFFFFF);
+	// Phase 6.3 — split per role so a char can hold one support + one tank
+	// merc simultaneously. ADV_HIRED_UNTIL kept as max(both) for backward
+	// compatibility with older scripts that read it.
+	int64 hire_until_val = (dur_ms > 0)
+		? ((int64)time(nullptr) + (int64)(dur_ms / 1000))
+		: 0x7FFFFFFFLL;
+	const char* role_var = (role_arg == AI_HIRE_ROLE_TANK)
+		? "ADV_HIRE_TANK_UNTIL" : "ADV_HIRE_SUP_UNTIL";
+	pc_setglobalreg(sd, add_str(role_var), hire_until_val);
+	int64 cur_legacy = pc_readglobalreg(sd, add_str("ADV_HIRED_UNTIL"));
+	if (hire_until_val > cur_legacy)
+		pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), hire_until_val);
 	// Phase 6.2 — persist contract so the silent auto-restore on
 	// ai-server reboot (map/aichrif.cpp::aichrif_restore_online_mercs)
 	// and the OnPCLoginEvent restore in dro_economy_hooks.txt have a
@@ -11605,14 +11609,41 @@ ACMD_FUNC(hire){
 /// ai-server is the source of truth for owner→shell mapping; this just
 /// forwards the request.
 ACMD_FUNC(dismiss){
-	int32 r = aichrif_send_dismiss((uint32)sd->status.char_id);
+	// Phase 6.3 — `@dismiss` (no arg) drops both roles; `@dismiss tank`
+	// ou `@dismiss support` drops apenas o role indicado.
+	uint8 role_filter = AI_HIRE_ROLE_ALL;
+	if (*message != '\0') {
+		const char* m = message;
+		while (*m == ' ') m++;
+		if      (strncasecmp(m, "tank", 4) == 0)    role_filter = AI_HIRE_ROLE_TANK;
+		else if (strncasecmp(m, "support", 7) == 0) role_filter = AI_HIRE_ROLE_SUPPORT;
+		else {
+			clif_displaymessage(fd, "@dismiss [tank|support] — sem argumento dispensa ambos.");
+			return -1;
+		}
+	}
+	int32 r = aichrif_send_dismiss((uint32)sd->status.char_id, role_filter);
 	if (r != 0) {
 		clif_displaymessage(fd, "@dismiss: ai-server is offline.");
 		return -1;
 	}
-	// Phase 6 — clear the soft-dedupe variable used by the NPC and the
-	// Voucher_Adventurer script so the player can re-hire immediately.
-	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), 0);
+	int32 cid = sd->status.char_id;
+	if (role_filter == AI_HIRE_ROLE_ALL || role_filter == AI_HIRE_ROLE_SUPPORT) {
+		pc_setglobalreg(sd, add_str("ADV_HIRE_SUP_UNTIL"), 0);
+		Sql_Query(mmysql_handle,
+			"DELETE FROM dro_merc_contracts WHERE char_id=%d AND role=%u",
+			cid, AI_HIRE_ROLE_SUPPORT);
+	}
+	if (role_filter == AI_HIRE_ROLE_ALL || role_filter == AI_HIRE_ROLE_TANK) {
+		pc_setglobalreg(sd, add_str("ADV_HIRE_TANK_UNTIL"), 0);
+		Sql_Query(mmysql_handle,
+			"DELETE FROM dro_merc_contracts WHERE char_id=%d AND role=%u",
+			cid, AI_HIRE_ROLE_TANK);
+	}
+	// Recompute legacy ADV_HIRED_UNTIL = max(both).
+	int64 sup = pc_readglobalreg(sd, add_str("ADV_HIRE_SUP_UNTIL"));
+	int64 tnk = pc_readglobalreg(sd, add_str("ADV_HIRE_TANK_UNTIL"));
+	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), sup > tnk ? sup : tnk);
 	clif_displaymessage(fd, "@dismiss: aventureiro dispensado.");
 	return 0;
 }

@@ -1,76 +1,117 @@
 //===== DimensionsRO ==========================================
-//= Treinador de Aventureiros (Phase 6 + 6.2 + persistencia)
+//= Treinador de Aventureiros (Phase 6 + 6.2 + 6.3)
 //===== Description: =========================================
 //= Hire de Aventureiro Suporte (Acolyte/Priest/HP/AB) ou
 //= Tanker (Sw/Crusader/Paladin/RG). NPC e' o unico ponto de
 //= contato pro player (hire/dispense) — @hire e @dismiss
 //= continuam GM-only.
 //=
-//= Persistencia: cada hire grava uma linha em
-//= `dro_merc_contracts` (char_id PK). Dispense apaga. Permite:
-//=   - char login refund pro-rata se ai-server crashou
-//=   - ai-server startup pode reler contratos e re-spawnar
+//= Phase 6.3: 1 merc por role. Player pode contratar
+//= simultaneamente 1 Suporte + 1 Tanker. Anti-stack via
+//= ADV_HIRE_SUP_UNTIL e ADV_HIRE_TANK_UNTIL (vars char_reg).
+//= Tabela dro_merc_contracts tem PK composta (char_id, role).
+//=
+//= Persistencia: cada hire grava uma linha em dro_merc_contracts.
+//= Permite:
+//=   - login auto-restore (OnPCLoginEvent)
+//=   - boot auto-restore (map-server, ping token=1)
 //=   - leaderboard / metricas no futuro
 //=
-//= Orfao: se ADV_HIRED_UNTIL > now mas ai-server perdeu o
-//= merc (crash/restart), o player nao consegue contratar de
-//= novo. NPC detecta via ausencia de linha em
-//= dro_merc_contracts e oferece dispense + refund pro-rata.
+//= Orfao: ADV_HIRE_*_UNTIL > now mas ai-server crashou.
+//= NPC oferece restore quando detecta hired_at < $dro_ai_boot_ts.
 //============================================================
 
 prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	mes "[Treinador de Aventureiros]";
 	mes "Ola, aventureiro. Veio buscar um companheiro de jornada?";
+	next;
+
+	.@now_ts = gettimetick(2);
+	.@sup_active = (ADV_HIRE_SUP_UNTIL > .@now_ts);
+	.@tnk_active = (ADV_HIRE_TANK_UNTIL > .@now_ts);
+
+	mes "[Treinador de Aventureiros]";
+	mes "Voce pode ter um Suporte e um Tanker ao mesmo tempo.";
 	mes " ";
+	if (.@sup_active) {
+		.@left_sup = (ADV_HIRE_SUP_UNTIL == 2147483647) ? -1 : (ADV_HIRE_SUP_UNTIL - .@now_ts) / 60 + 1;
+		mes "Suporte: ^990099contratado^000000 " + ((.@left_sup < 0) ? "(sem expiracao)" : "(restam " + .@left_sup + " min)");
+	} else {
+		mes "Suporte: disponivel";
+	}
+	if (.@tnk_active) {
+		.@left_tnk = (ADV_HIRE_TANK_UNTIL == 2147483647) ? -1 : (ADV_HIRE_TANK_UNTIL - .@now_ts) / 60 + 1;
+		mes "Tanker:  ^FF0000contratado^000000 " + ((.@left_tnk < 0) ? "(sem expiracao)" : "(restam " + .@left_tnk + " min)");
+	} else {
+		mes "Tanker:  disponivel";
+	}
+	next;
 
-	// Already hired? Detect orphan first to offer the right menu.
-	if (ADV_HIRED_UNTIL > gettimetick(2)) {
-		.@left = (ADV_HIRED_UNTIL - gettimetick(2)) / 60 + 1;
+	.@chosen = select(
+		"Suporte (cura+buff)",
+		"Tanker (segura aggro)",
+		"Cancelar"
+	);
+	if (.@chosen == 3) close;
+	.@role_id = (.@chosen == 1) ? 0 : 1;
+	.@role_lbl$ = (.@role_id == 1) ? "Tanker" : "Suporte";
+	.@active = (.@role_id == 1) ? .@tnk_active : .@sup_active;
 
+	// Already-hired path: offer restore (if orphan) or dismiss.
+	if (.@active) {
 		.@orphan = 0;
-		query_sql "SELECT role, job, tier, base_level, job_level, hired_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
-			.@c_role, .@c_job, .@c_tier, .@c_blvl, .@c_jlvl, .@c_hired_at;
-		if (getarraysize(.@c_role) > 0 && $dro_ai_boot_ts > 0 && $dro_ai_boot_ts > .@c_hired_at[0])
+		query_sql "SELECT job, tier, base_level, job_level, hired_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id,
+			.@c_job, .@c_tier, .@c_blvl, .@c_jlvl, .@c_hired_at;
+		if (getarraysize(.@c_job) > 0 && $dro_ai_boot_ts > 0 && $dro_ai_boot_ts > .@c_hired_at[0])
 			.@orphan = 1;
 
-		mes "Voce ainda tem um Aventureiro contratado.";
-		mes "Restam ^0000FF" + .@left + " minuto(s)^000000.";
+		mes "[Treinador de Aventureiros]";
+		mes "Seu " + .@role_lbl$ + " ja esta contratado.";
 		if (.@orphan) {
 			mes " ";
-			mes "^FF0000Detectei que ele foi perdido em uma reinicializacao do servidor.^000000";
-			mes "Posso restaurar agora se voce quiser.";
+			mes "^FF0000Detectei que ele foi perdido em uma reinicializacao.^000000";
+			mes "Posso restaurar agora.";
 		}
 		next;
 
 		if (.@orphan) {
 			.@op = select(
-				"Restaurar Aventureiro agora",
+				"Restaurar agora",
 				"Dispensar (encerra o contrato sem reembolso)",
 				"Voltar"
 			);
 			if (.@op == 3) close;
-
 			if (.@op == 1) {
 				if (getcharid(1) == 0) {
 					mes "[Treinador de Aventureiros]";
 					mes "Voce precisa estar em uma ^FF0000party^000000 para eu trazer ele de volta.";
-					mes "Crie uma party e fale comigo de novo.";
 					close;
 				}
-				.@now_ts = gettimetick(2);
-				.@remaining_sec = ADV_HIRED_UNTIL - .@now_ts;
-				if (.@remaining_sec <= 0) {
+				.@now2 = gettimetick(2);
+				.@until = (.@role_id == 1) ? ADV_HIRE_TANK_UNTIL : ADV_HIRE_SUP_UNTIL;
+				.@permanent = (.@until == 2147483647);
+				.@remaining_min = 0;
+				if (!.@permanent) {
+					.@remaining_sec = .@until - .@now2;
+					if (.@remaining_sec <= 0) {
+						mes "[Treinador de Aventureiros]";
+						mes "Hm, o tempo acabou. Foi-se o contrato.";
+						query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+						if (.@role_id == 1) ADV_HIRE_TANK_UNTIL = 0; else ADV_HIRE_SUP_UNTIL = 0;
+						close;
+					}
+					.@remaining_min = (.@remaining_sec + 59) / 60;
+				}
+				atcommand "@hire " + .@c_job[0] + " " + .@c_tier[0] + " " + .@remaining_min + " " + .@c_blvl[0] + " " + .@c_jlvl[0] + " " + .@role_id;
+				if (.@permanent) {
+					query_sql "UPDATE dro_merc_contracts SET hired_at=" + .@now2 + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
 					mes "[Treinador de Aventureiros]";
-					mes "Hm, o tempo acabou enquanto conversavamos. Foi-se o contrato.";
-					query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0);
-					ADV_HIRED_UNTIL = 0;
-					close;
+					mes "Restaurado! Sem expiracao.";
+				} else {
+					query_sql "UPDATE dro_merc_contracts SET hired_at=" + .@now2 + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+					mes "[Treinador de Aventureiros]";
+					mes "Restaurado! Restam ^0000FF" + .@remaining_min + " minuto(s)^000000.";
 				}
-				.@remaining_min = (.@remaining_sec + 59) / 60;
-				atcommand "@hire " + .@c_job[0] + " " + .@c_tier[0] + " " + .@remaining_min + " " + .@c_blvl[0] + " " + .@c_jlvl[0] + " " + .@c_role[0];
-				query_sql "UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0);
-				mes "[Treinador de Aventureiros]";
-				mes "Restaurado! Restam ^0000FF" + .@remaining_min + " minuto(s)^000000.";
 				close;
 			}
 		} else {
@@ -81,61 +122,45 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 			if (.@op == 2) close;
 		}
 
-		// Dispense path (sem refund — restore foi a oferta).
-		query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0);
-		ADV_HIRED_UNTIL = 0;
-		atcommand "@dismiss";
+		// Dispense path — apenas o role escolhido.
+		query_sql "DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role_id;
+		if (.@role_id == 1) ADV_HIRE_TANK_UNTIL = 0; else ADV_HIRE_SUP_UNTIL = 0;
+		atcommand "@dismiss " + ((.@role_id == 1) ? "tank" : "support");
 		mes "[Treinador de Aventureiros]";
-		mes "Combinado, dispensei o Aventureiro.";
-		mes "Pode contratar de novo quando quiser.";
+		mes "Combinado, dispensei seu " + .@role_lbl$ + ".";
 		close;
 	}
 
-	mes "Posso te indicar dois tipos:";
-	mes "- ^990099Aventureiro de Suporte^000000 (cura, buffa, segura barra)";
-	mes "- ^FF0000Aventureiro Tanker^000000 (corre pra frente, segura aggro)";
-	next;
-
+	// Fresh hire path.
 	if (getcharid(1) == 0) {
 		mes "[Treinador de Aventureiros]";
 		mes "Voce precisa estar em uma ^FF0000party^000000 para contratar um Aventureiro.";
-		mes " ";
 		mes "Crie uma party (^FF0000/organize <nome>^000000) ou junte-se a uma e volte aqui.";
 		close;
 	}
 	if (!is_party_leader()) {
 		mes "[Treinador de Aventureiros]";
 		mes "So o ^FF0000lider da party^000000 pode contratar um Aventureiro.";
-		mes " ";
 		mes "Peca para o lider conversar comigo.";
 		close;
 	}
 
-	mes "[Treinador de Aventureiros]";
-	mes "Qual estilo de companheiro voce quer?";
-	next;
-	.@role = select("Suporte (cura+buff)", "Tanker (segura aggro)", "Cancelar");
-	if (.@role == 3) close;
-
 	.@blvl = BaseLevel;
-	if (.@role == 1) {
-		if (.@blvl < 40)      { .@job = 4;    .@tier = 0; .@cls$ = "Acolyte";    .@jlvl = 50; }
-		else if (.@blvl < 70) { .@job = 8;    .@tier = 1; .@cls$ = "Priest";     .@jlvl = 50; }
+	if (.@role_id == 0) {
+		if (.@blvl < 40)      { .@job = 4;    .@tier = 0; .@cls$ = "Acolyte";     .@jlvl = 50; }
+		else if (.@blvl < 70) { .@job = 8;    .@tier = 1; .@cls$ = "Priest";      .@jlvl = 50; }
 		else if (.@blvl < 99) { .@job = 4014; .@tier = 1; .@cls$ = "High Priest"; .@jlvl = 70; }
 		else                  { .@job = 4063; .@tier = 2; .@cls$ = "Arch Bishop"; .@jlvl = 70; }
-		.@role_id = 0; .@role_lbl$ = "Suporte";
 	} else {
 		if (.@blvl < 40)      { .@job = 1;    .@tier = 0; .@cls$ = "Swordsman";   .@jlvl = 50; }
 		else if (.@blvl < 70) { .@job = 14;   .@tier = 1; .@cls$ = "Crusader";    .@jlvl = 50; }
 		else if (.@blvl < 99) { .@job = 4015; .@tier = 2; .@cls$ = "Paladin";     .@jlvl = 70; }
 		else                  { .@job = 4066; .@tier = 2; .@cls$ = "Royal Guard"; .@jlvl = 70; }
-		.@role_id = 1; .@role_lbl$ = "Tanker";
 	}
 	.@adv_lvl = .@blvl;
 
 	mes "[Treinador de Aventureiros]";
 	mes "Vou chamar um ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") tao forte quanto voce.";
-	mes " ";
 	mes "Por quanto tempo voce quer a companhia dele?";
 	next;
 
@@ -167,13 +192,10 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	}
 
 	mes "[Treinador de Aventureiros]";
-	if (.@pay_voucher) {
-		mes "Combinado: ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") contigo por " + .@min + " minutos.";
-		mes "Em troca: ^FF00001 Voucher de Aventureiro^000000.";
-	} else {
-		mes "Combinado: ^FF0000" + .@cls$ + "^000000 (" + .@role_lbl$ + ") contigo por " + .@min + " minutos.";
-		mes "Em troca: ^0000FF" + .@price + "z^000000.";
-	}
+	if (.@pay_voucher)
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos. Em troca: ^FF00001 Voucher de Aventureiro^000000.";
+	else
+		mes "Combinado: ^FF0000" + .@cls$ + "^000000 contigo por " + .@min + " minutos. Em troca: ^0000FF" + .@price + "z^000000.";
 	next;
 	if (select("Sim:Nao") == 2) close;
 
@@ -189,12 +211,14 @@ prt_in,44,113,4	script	Treinador de Aventureiros#dro	1_F_PRIEST,{
 	}
 
 	atcommand "@hire " + .@job + " " + .@tier + " " + .@min + " " + .@adv_lvl + " " + .@jlvl + " " + .@role_id;
-	ADV_HIRED_UNTIL = gettimetick(2) + .@min * 60;
+	.@expires_at = gettimetick(2) + .@min * 60;
+	if (.@role_id == 1) ADV_HIRE_TANK_UNTIL = .@expires_at;
+	else ADV_HIRE_SUP_UNTIL = .@expires_at;
+	if (.@expires_at > ADV_HIRED_UNTIL) ADV_HIRED_UNTIL = .@expires_at;
 
-	// Persiste o contrato (idempotent — REPLACE em vez de INSERT cobre o
-	// caso raro de hire ter falhado em ai-server mas script ja ter cobrado).
+	// Persiste o contrato (REPLACE pelo PK composto (char_id, role)).
 	query_sql "REPLACE INTO dro_merc_contracts (char_id, account_id, role, job, tier, base_level, job_level, paid_zeny, paid_voucher, duration_min, hired_at, expires_at) VALUES (" +
-		getcharid(0) + ", " + getcharid(3) + ", " + .@role_id + ", " + .@job + ", " + .@tier + ", " + .@adv_lvl + ", " + .@jlvl + ", " + .@price + ", " + (.@pay_voucher ? 1 : 0) + ", " + .@min + ", " + gettimetick(2) + ", " + (gettimetick(2) + .@min * 60) + ")";
+		getcharid(0) + ", " + getcharid(3) + ", " + .@role_id + ", " + .@job + ", " + .@tier + ", " + .@adv_lvl + ", " + .@jlvl + ", " + .@price + ", " + (.@pay_voucher ? 1 : 0) + ", " + .@min + ", " + gettimetick(2) + ", " + .@expires_at + ")";
 
 	mes "[Treinador de Aventureiros]";
 	if (.@role_id == 1)

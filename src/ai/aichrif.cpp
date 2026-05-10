@@ -128,6 +128,10 @@ struct shell_state {
 	uint16 prev_owner_hp_pct;
 	t_tick last_owner_move_tick;
 	t_tick last_owner_damage_tick;
+	// Phase 6.3 — smoothed owner velocity vector. Updated each report
+	// when the owner moves; the follow tick uses it to position the
+	// tanker ahead of the owner instead of just trailing behind.
+	int8   lead_dx, lead_dy;
 	// Phase 6 — when the merc dies we pause the hire contract; on
 	// resurrection we shift hire_expires_at by the time spent dead so
 	// the player isn't billed for downtime.
@@ -150,10 +154,13 @@ struct shell_state {
 };
 std::vector<shell_state> g_shells_local;
 std::unordered_map<uint32, size_t> g_shell_idx; // shell_id -> g_shells_local index
-// Phase 6 — owner_cid -> shell_id; one merc per character. Used for
-// anti-stack at hire time and for routing DISMISS_REQUEST to the right
-// shell. Keyed by char_id, not account_id, so the merc is bound to the
-// specific character that hired it.
+// Phase 6 — (char_id, role) -> shell_id. A char can hold one merc per
+// role (support + tank simultaneously). Composite key = cid*2 + role.
+// Used for anti-stack at hire time and for routing DISMISS_REQUEST to
+// the right shell.
+static inline uint32 merc_key(uint32 cid, uint8 role) {
+	return cid * 2u + (role & 1u);
+}
 std::unordered_map<uint32, uint32> g_merc_by_owner;
 // Free-roam wander: town shells take small steps every tick; field/dungeon
 // patrols use a larger step (PATROL_STEP) with persistent direction.
@@ -304,11 +311,12 @@ uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 		ShowWarning("aichrif_hire: not connected to char-server (state=%d).\n", aichrif_state);
 		return 0;
 	}
-	// Phase 6 — anti-stack. One merc per character at a time. Keyed by
-	// char_id so a different char on the same account can hire its own.
-	if (g_merc_by_owner.find(owner_cid) != g_merc_by_owner.end()) {
-		ShowWarning("aichrif_hire: char %u already has a merc (shell %u).\n",
-			owner_cid, g_merc_by_owner[owner_cid]);
+	// Phase 6.3 — anti-stack per (char_id, role). A char can hold one
+	// merc per role (1 support + 1 tank), but not two of the same role.
+	uint32 mkey = merc_key(owner_cid, role);
+	if (g_merc_by_owner.find(mkey) != g_merc_by_owner.end()) {
+		ShowWarning("aichrif_hire: char %u already has a merc of role %u (shell %u).\n",
+			owner_cid, role, g_merc_by_owner[mkey]);
 		return 0;
 	}
 	if (!profile_has_exact(job, tier)) {
@@ -393,7 +401,7 @@ uint32 aichrif_hire(uint16 job, uint8 tier, uint32 owner_aid, uint32 owner_cid,
 	st.init_snap.owner_cid = owner_cid;
 	g_shell_idx[sid] = g_shells_local.size();
 	g_shells_local.push_back(st);
-	g_merc_by_owner[owner_cid] = sid;
+	g_merc_by_owner[mkey] = sid;
 
 	ShowStatus("ai-server: hired job=%u tier=%u role=%u as shell %u for char %u (aid %u) at %s(%u,%u) dur=%ums.\n",
 		job, tier, role, sid, owner_cid, owner_aid, map_name, x, y, duration_ms);
@@ -655,8 +663,30 @@ static int32 aichrif_parse_report(int32 fd){
 		// support tick's emergency-mode filter.
 		t_tick now_r = gettick();
 		if (p->owner_present) {
-			if (p->owner_x != s.prev_owner_x || p->owner_y != s.prev_owner_y)
+			int32 mx = (int32)p->owner_x - (int32)s.prev_owner_x;
+			int32 my = (int32)p->owner_y - (int32)s.prev_owner_y;
+			if (mx != 0 || my != 0) {
 				s.last_owner_move_tick = now_r;
+				// Phase 6.3 — exponential smoothing on owner velocity vector.
+				// We store unit direction in [-1,0,1] per axis (snapped from
+				// per-report deltas). Smoothing over ~4 reports avoids the
+				// follow tick chasing a single jitter cell. Big jumps (>5
+				// cells, e.g. teleport) bypass smoothing — direction is
+				// taken at face value so the lead snaps to the new heading.
+				int32 sx = (mx > 0) - (mx < 0);
+				int32 sy = (my > 0) - (my < 0);
+				if (mx > 5 || mx < -5 || my > 5 || my < -5) {
+					s.lead_dx = (int8)sx;
+					s.lead_dy = (int8)sy;
+				} else {
+					int32 nx = ((int32)s.lead_dx * 3 + sx) / 4;
+					int32 ny = ((int32)s.lead_dy * 3 + sy) / 4;
+					if (nx == 0 && sx != 0) nx = sx;
+					if (ny == 0 && sy != 0) ny = sy;
+					s.lead_dx = (int8)nx;
+					s.lead_dy = (int8)ny;
+				}
+			}
 			if (s.prev_owner_hp_pct > 0 && p->owner_hp_pct < s.prev_owner_hp_pct)
 				s.last_owner_damage_tick = now_r;
 			s.prev_owner_x = p->owner_x;
@@ -742,11 +772,13 @@ int32 aichrif_parse(int32 fd){
 			case PACKET_AI_DISMISS_REQUEST: {
 				if (RFIFOREST(fd) < sizeof(PACKET_AI_DISMISS_REQUEST_S)) return 0;
 				const PACKET_AI_DISMISS_REQUEST_S* d = (const PACKET_AI_DISMISS_REQUEST_S*)RFIFOP(fd, 0);
-				auto it = g_merc_by_owner.find(d->owner_cid);
-				if (it != g_merc_by_owner.end()) {
+				// Phase 6.3 — dismiss can target a single role or both.
+				auto dismiss_role = [&](uint8 r){
+					auto it = g_merc_by_owner.find(merc_key(d->owner_cid, r));
+					if (it == g_merc_by_owner.end()) return;
 					uint32 sid = it->second;
-					ShowStatus("ai-server: dismiss requested for char %u (shell %u).\n",
-						d->owner_cid, sid);
+					ShowStatus("ai-server: dismiss requested for char %u role %u (shell %u).\n",
+						d->owner_cid, r, sid);
 					aichrif_send_despawn(char_fd, sid, /*reason=*/5);
 					auto sit = g_shell_idx.find(sid);
 					if (sit != g_shell_idx.end() && sit->second < g_shells_local.size()) {
@@ -757,6 +789,12 @@ int32 aichrif_parse(int32 fd){
 						s.suspended = false;
 					}
 					g_merc_by_owner.erase(it);
+				};
+				if (d->role == AI_HIRE_ROLE_ALL) {
+					dismiss_role(AI_HIRE_ROLE_SUPPORT);
+					dismiss_role(AI_HIRE_ROLE_TANK);
+				} else {
+					dismiss_role(d->role);
 				}
 				RFIFOSKIP(fd, d->len);
 				break;
@@ -1011,7 +1049,7 @@ static TIMER_FUNC(aichrif_follow_timer){
 		if (s.hire_expires_at != 0 && DIFF_TICK(now, s.hire_expires_at) >= 0) {
 			ShowStatus("ai-server: merc shell %u contract expired — despawning.\n", s.shell_id);
 			aichrif_send_despawn(char_fd, s.shell_id, /*reason=*/3);
-			if (s.owner_cid != 0) g_merc_by_owner.erase(s.owner_cid);
+			if (s.owner_cid != 0) g_merc_by_owner.erase(merc_key(s.owner_cid, s.role));
 			s.respawn_at_tick = 0;
 			s.owner_aid = 0;
 			s.owner_cid = 0;
@@ -1074,41 +1112,65 @@ static TIMER_FUNC(aichrif_follow_timer){
 			}
 			continue;
 		}
-		// Same map — close gap if drifted past 3 cells.
-		int32 dx = (int32)s.cur_x - (int32)s.owner_x;
-		int32 dy = (int32)s.cur_y - (int32)s.owner_y;
-		int32 cheb = std::max(std::abs(dx), std::abs(dy));
-		if (cheb <= 3) continue;	// already close enough
-		if (s.last_follow_tick != 0 && DIFF_TICK(now, s.last_follow_tick) < 700) continue;
-		// Phase 6.3 — if the merc is actively engaging a mob (combat tick
-		// gave it a target), let it pursue without warping back. The
-		// tanker would otherwise oscillate: combat tick walks to mob,
-		// follow tick warps to owner, combat tick walks again, etc.
-		// The warp safety net only kicks in when the gap gets so large
-		// that it's clearly Fly Wing / @warp / random teleport.
+		// Phase 6.3 — formation positioning. Tanker stands AHEAD of the
+		// owner in the direction they're moving (lead_dx/dy from smoothed
+		// velocity). Support stays close behind. If owner is stationary,
+		// fall back to the last known heading; if both are zero, just
+		// stand close.
+		int32 lead_x, lead_y;
+		if (s.role == AI_HIRE_ROLE_TANK) {
+			constexpr int32 LEAD_DISTANCE = 3;	// cells in front of owner
+			int32 ldx = s.lead_dx, ldy = s.lead_dy;
+			if (ldx == 0 && ldy == 0) {
+				// Owner never moved (or just spawned). Stand 2 cells north
+				// of owner as a default — better than dogpiling cell.
+				ldx = 0; ldy = 1;
+			}
+			lead_x = (int32)s.owner_x + ldx * LEAD_DISTANCE;
+			lead_y = (int32)s.owner_y + ldy * LEAD_DISTANCE;
+		} else {
+			// Support: trail just behind/beside the owner. Use the trail
+			// formula based on current relative position.
+			int32 tdx = (int32)s.cur_x - (int32)s.owner_x;
+			int32 tdy = (int32)s.cur_y - (int32)s.owner_y;
+			lead_x = (int32)s.owner_x - (tdx > 0 ? -2 : 2);
+			lead_y = (int32)s.owner_y - (tdy > 0 ? -2 : 2);
+		}
+
+		int32 dx_to_target = (int32)s.cur_x - lead_x;
+		int32 dy_to_target = (int32)s.cur_y - lead_y;
+		int32 cheb_target = std::max(std::abs(dx_to_target), std::abs(dy_to_target));
+		// Distance from owner directly — used for warp gating.
+		int32 dx_owner = (int32)s.cur_x - (int32)s.owner_x;
+		int32 dy_owner = (int32)s.cur_y - (int32)s.owner_y;
+		int32 cheb_owner = std::max(std::abs(dx_owner), std::abs(dy_owner));
+
+		if (cheb_target <= 1) continue;	// already in formation slot
+		// Phase 6.3 — 200ms throttle (was 700ms). With map-server reporting
+		// merc shells every 200ms (AI_MERC_REPORT_PERIOD_MS), this lines up
+		// 1:1 with REPORTs so we re-walk every time the owner pos snapshot
+		// updates. Anything higher creates visible follow lag.
+		if (s.last_follow_tick != 0 && DIFF_TICK(now, s.last_follow_tick) < 200) continue;
+		// Phase 6.3 — engaging a mob: let pursuit run as long as we're
+		// not absurdly far from the owner. The combat tick already gates
+		// tanker engagement on owner_target_id, so target_id != 0 means
+		// the player chose this fight; stop interrupting it.
 		constexpr int32 AI_FOLLOW_PURSUIT_TOLERANCE = 25;
-		if (s.target_id != 0 && cheb < AI_FOLLOW_PURSUIT_TOLERANCE) continue;
-		// Phase 6.3 — if the owner moved out of WALK_TO range (Fly Wing,
-		// teleport scroll, or just walked far while the merc was busy),
-		// the path-find on map-server can fail or stop short and the
-		// merc gets stuck. Warp instead. Threshold is wider than before
-		// (was 14) so the merc has room to pursue mobs on its own.
+		if (s.target_id != 0 && cheb_owner < AI_FOLLOW_PURSUIT_TOLERANCE) continue;
+		// Warp safety net for Fly Wing / @warp / drift past walk range.
 		constexpr int32 AI_FOLLOW_WARP_GAP = 25;
-		if (cheb >= AI_FOLLOW_WARP_GAP) {
+		if (cheb_owner >= AI_FOLLOW_WARP_GAP) {
 			const char* mname = mapindex_id2name((int32)s.owner_mapindex);
 			if (mname && mname[0]) {
 				aichrif_send_warp(char_fd, s.shell_id, mname,
-					(uint16)std::max<int32>(1, (int32)s.owner_x - 2),
-					(uint16)std::max<int32>(1, (int32)s.owner_y - 2));
+					(uint16)std::max<int32>(1, lead_x),
+					(uint16)std::max<int32>(1, lead_y));
 				s.last_follow_tick = now;
 			}
 			continue;
 		}
-		// Trail position: stand 2 cells in the direction the shell came
-		// from (just behind the owner). Doesn't matter much; map-server
-		// nudges to walkable.
-		uint16 tx = (uint16)std::max<int32>(1, (int32)s.owner_x - (dx > 0 ? -2 : 2));
-		uint16 ty = (uint16)std::max<int32>(1, (int32)s.owner_y - (dy > 0 ? -2 : 2));
+		uint16 tx = (uint16)std::max<int32>(1, lead_x);
+		uint16 ty = (uint16)std::max<int32>(1, lead_y);
 		aichrif_send_walk_to(char_fd, s.shell_id, tx, ty);
 		s.last_follow_tick = now;
 	}
@@ -1203,12 +1265,15 @@ static TIMER_FUNC(aichrif_combat_timer){
 		}
 		uint8 idx = 0;
 		uint32 tid = 0;
-		// Phase 6.2 — tank merc target preference: if the owner is hitting
-		// something we can see, that's our priority. Otherwise (or if the
-		// owner has no target), fall back to the autonomous "top-3 closest"
-		// jitter. Owner_target preference also covers "mob attacking owner"
-		// because the player typically retaliates against the same mob.
-		if (s.role == AI_HIRE_ROLE_TANK && s.owner_target_id != 0) {
+		// Phase 6.2 — tank merc target: ONLY engages what the owner is
+		// attacking. If the owner has no target, the tanker stays in
+		// formation — no auto-pull, no chasing mobs the player ignored.
+		// Autonomous shells (no owner) keep the old top-3 jitter.
+		if (s.role == AI_HIRE_ROLE_TANK) {
+			if (s.owner_target_id == 0) {
+				if (s.target_id != 0) s.target_id = 0;
+				continue;
+			}
 			for (uint8 i = 0; i < s.enemy_count; i++) {
 				if (s.enemies[i].id == s.owner_target_id) {
 					idx = i;
@@ -1216,10 +1281,9 @@ static TIMER_FUNC(aichrif_combat_timer){
 					break;
 				}
 			}
-		}
-		if (tid == 0) {
-			// Target jitter: pick among top-3 closest (or fewer). Weights:
-			// 50% closest, 30% second, 20% third.
+			if (tid == 0) continue;	// owner's target out of our view, skip
+		} else {
+			// Autonomous shell (no owner). Pick among top-3 closest.
 			uint8 max_pick = (uint8)std::min<uint8>(s.enemy_count, 3);
 			uint8 r = (uint8)(rnd() % 100);
 			idx = (max_pick >= 3 && r >= 80) ? 2
