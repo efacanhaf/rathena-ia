@@ -101,8 +101,11 @@ L_ep14:
 	setarray .@q[320],13058,13059,13060,13061,13062,13063,13064,13065,13066,14118,14119,14123,14125,14126,14131,14133,14137,14138,14141;
 
 	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-		// completequest e' no-op se a quest nao esta no log do player
-		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		// completequest exige HAVEQUEST. Pra char que nunca abriu a
+		// quest (skip total via Valkyrie), setquest primeiro, dai
+		// completequest marca Q_COMPLETE. Idempotente em todos os
+		// estados (0 -> 1 -> 2; 1 -> 2; 2 -> noop).
+		if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
 		completequest .@q[.@i];
 	}
 
@@ -150,8 +153,11 @@ L_ep15:
 	setarray .@q[60],11374,11375,11376,11377;
 
 	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-		// completequest e' no-op se a quest nao esta no log do player
-		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		// completequest exige HAVEQUEST. Pra char que nunca abriu a
+		// quest (skip total via Valkyrie), setquest primeiro, dai
+		// completequest marca Q_COMPLETE. Idempotente em todos os
+		// estados (0 -> 1 -> 2; 1 -> 2; 2 -> noop).
+		if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
 		completequest .@q[.@i];
 	}
 
@@ -163,8 +169,11 @@ L_ep15:
 	setarray .@q[60],13202,13203,13204,13205;
 
 	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-		// completequest e' no-op se a quest nao esta no log do player
-		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		// completequest exige HAVEQUEST. Pra char que nunca abriu a
+		// quest (skip total via Valkyrie), setquest primeiro, dai
+		// completequest marca Q_COMPLETE. Idempotente em todos os
+		// estados (0 -> 1 -> 2; 1 -> 2; 2 -> noop).
+		if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
 		completequest .@q[.@i];
 	}
 
@@ -214,8 +223,11 @@ L_ep16:
 	setarray .@q[160],14508,14509,14510,14511,14512,14513,14514,14515,14516;
 
 	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-		// completequest e' no-op se a quest nao esta no log do player
-		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		// completequest exige HAVEQUEST. Pra char que nunca abriu a
+		// quest (skip total via Valkyrie), setquest primeiro, dai
+		// completequest marca Q_COMPLETE. Idempotente em todos os
+		// estados (0 -> 1 -> 2; 1 -> 2; 2 -> noop).
+		if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
 		completequest .@q[.@i];
 	}
 
@@ -230,8 +242,11 @@ L_ep16:
 	setarray .@q[120],16055,16056,16057,16058,16059,16060,16061;
 
 	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-		// completequest e' no-op se a quest nao esta no log do player
-		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		// completequest exige HAVEQUEST. Pra char que nunca abriu a
+		// quest (skip total via Valkyrie), setquest primeiro, dai
+		// completequest marca Q_COMPLETE. Idempotente em todos os
+		// estados (0 -> 1 -> 2; 1 -> 2; 2 -> noop).
+		if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
 		completequest .@q[.@i];
 	}
 
@@ -278,8 +293,11 @@ L_ep17:
 	setarray .@q[80],18001;
 
 	for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-		// completequest e' no-op se a quest nao esta no log do player
-		// (quest_check verifica HAVEQUEST). Marca Q_COMPLETE so' nas que tem.
+		// completequest exige HAVEQUEST. Pra char que nunca abriu a
+		// quest (skip total via Valkyrie), setquest primeiro, dai
+		// completequest marca Q_COMPLETE. Idempotente em todos os
+		// estados (0 -> 1 -> 2; 1 -> 2; 2 -> noop).
+		if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
 		completequest .@q[.@i];
 	}
 
@@ -297,7 +315,10 @@ L_ep17:
 		setarray .@q[100],18001,18002,18013,18014,18015,18016,18017,18018,18019,18020,18021,18022,18023,18024,18025;
 
 		for (.@i = 0; .@i < getarraysize(.@q); .@i++) {
-			if (isbegin_quest(.@q[.@i]) > 0) completequest .@q[.@i];
+			// Mesmo padrao dos outros loops: setquest se nao tem,
+			// completequest sempre. Idempotente.
+			if (isbegin_quest(.@q[.@i]) == 0) setquest .@q[.@i];
+			completequest .@q[.@i];
 		}
 	}
 
