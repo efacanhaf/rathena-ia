@@ -767,6 +767,9 @@ int32 pc_get_group_id( const map_session_data* sd ) {
 * @return Group Level
 */
 int32 pc_get_group_level( const map_session_data* sd ) {
+	// AI shells (aventureiros) and other synthetic sessions never go through
+	// pc_groups_resolve so sd->group stays null. Treat as unprivileged user.
+	if (sd == nullptr || sd->group == nullptr) return 0;
 	return sd->group->level;
 }
 
