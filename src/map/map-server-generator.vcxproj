@@ -198,6 +198,7 @@
   <ItemGroup>
     <ClInclude Include="achievement.hpp" />
     <ClInclude Include="admin_socket.hpp" />
+    <ClInclude Include="aichrif.hpp" />
     <ClInclude Include="atcommand.hpp" />
     <ClInclude Include="battle.hpp" />
     <ClInclude Include="battleground.hpp" />
@@ -248,6 +249,7 @@
   <ItemGroup>
     <ClCompile Include="achievement.cpp" />
     <ClCompile Include="admin_socket.cpp" />
+    <ClCompile Include="aichrif.cpp" />
     <ClCompile Include="atcommand.cpp" />
     <ClCompile Include="battle.cpp" />
     <ClCompile Include="battleground.cpp" />

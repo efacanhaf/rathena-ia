@@ -23,6 +23,8 @@
 #include "chrif.hpp"
 #include "party.hpp"
 #include "clif.hpp"
+#include "mapreg.hpp"
+#include "script.hpp"
 #include <common/mapindex.hpp>
 
 #include "map.hpp"
@@ -68,10 +70,26 @@ constexpr t_tick AI_OWNER_GONE_GRACE_MS = 8000;
 struct suspended_owner_t { uint32 aid; uint32 cid; };
 std::unordered_map<uint32, suspended_owner_t> g_suspended_owner;
 constexpr t_tick AI_OWNER_BACK_POLL_MS = 1000;
+
+/// Phase 6.4 — last mob the player damaged (any source: skill, ranged,
+/// splash, reflected, etc.). Used as fallback for REPORT.owner_target_id
+/// when ud.target is 0 (skill-only damage doesn't engage auto-attack).
+/// Keyed by char_id so it survives @reloadbattleconf and the like.
+struct owner_damage_t { uint32 target_id; t_tick tick; };
+std::unordered_map<uint32, owner_damage_t> g_owner_last_damage;
+constexpr t_tick AI_OWNER_DAMAGE_TTL_MS = 4000;
 }
 
 bool aishell_is_shell(uint32 account_id){
 	return account_id >= 95'000'000 && account_id < 100'000'000;
+}
+
+void aichrif_owner_dealt_damage(map_session_data* sd, block_list* target){
+	if (sd == nullptr || target == nullptr) return;
+	if (target->type != BL_MOB) return;
+	// Skip damage we caused to ourselves / our merc / party (would re-aim
+	// the tank at allies). Mobs only.
+	g_owner_last_damage[(uint32)sd->status.char_id] = { (uint32)target->id, gettick() };
 }
 
 map_session_data* aishell_find(uint32 shell_id){
@@ -82,7 +100,7 @@ map_session_data* aishell_find(uint32 shell_id){
 /// Reply to ai-server with PACKET_AI_PONG. Length-prefixed (8 bytes).
 int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 tier,
 		const char* map_name, uint16 x, uint16 y, uint32 duration_ms,
-		uint16 base_level_override, uint16 job_level_override){
+		uint16 base_level_override, uint16 job_level_override, uint8 role){
 	if (char_fd < 0 || session[char_fd] == nullptr) return -1;
 	PACKET_AI_HIRE_REQUEST_S p{};
 	p.cmd = PACKET_AI_HIRE_REQUEST;
@@ -91,6 +109,7 @@ int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 ti
 	p.owner_cid = owner_cid;
 	p.job = job;
 	p.tier = tier;
+	p.role = role;
 	safestrncpy(p.map_name, map_name, MAP_NAME_LENGTH_EXT);
 	p.x = x;
 	p.y = y;
@@ -103,12 +122,13 @@ int32 aichrif_send_hire(uint32 owner_aid, uint32 owner_cid, uint16 job, uint8 ti
 	return 0;
 }
 
-int32 aichrif_send_dismiss(uint32 owner_cid){
+int32 aichrif_send_dismiss(uint32 owner_cid, uint8 role){
 	if (char_fd < 0 || session[char_fd] == nullptr) return -1;
 	PACKET_AI_DISMISS_REQUEST_S p{};
 	p.cmd = PACKET_AI_DISMISS_REQUEST;
 	p.len = sizeof(p);
 	p.owner_cid = owner_cid;
+	p.role = role;
 	WFIFOHEAD(char_fd, sizeof(p));
 	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
 	WFIFOSET(char_fd, sizeof(p));
@@ -123,11 +143,115 @@ static void aichrif_send_pong(int32 fd, uint32 token){
 	WFIFOSET(fd, 8);
 }
 
+/// Phase 6.2 — silent merc restore on ai-server reboot.
+///
+/// When ai-server crashes/restarts, every shell in g_shells_local dies but
+/// dro_merc_contracts persists. For every online char with an active
+/// contract we re-emit the same HIRE_REQUEST that the @hire atcommand
+/// would, with the duration shrunk to the time still remaining. ai-server
+/// spawns the merc fresh — runtime state (HP, buffs, position relative to
+/// the owner) is gone, but the contract identity (job/tier/level/role/
+/// expiry) is preserved so the player picks up where they left off
+/// without a relog or NPC visit.
+///
+/// Invariants:
+///  - Only fires for chars with party (aichrif_send_hire path needs it).
+///  - Contracts whose expiry already passed during downtime are deleted.
+///  - hired_at is updated to now so a future *normal* login does NOT
+///    re-trigger the script-side orphan check.
+static int32 aichrif_restore_callback(map_session_data* sd, va_list ap){
+	(void)ap;
+	if (sd == nullptr) return 0;
+	if (sd->status.party_id == 0) return 0;	// @hire path requires party
+
+	uint32 cid = (uint32)sd->status.char_id;
+	if (SQL_ERROR == Sql_Query(mmysql_handle,
+			"SELECT role, job, tier, base_level, job_level, expires_at "
+			"FROM dro_merc_contracts WHERE char_id = %u",
+			cid)) {
+		Sql_ShowDebug(mmysql_handle);
+		return 0;
+	}
+	struct row_t { uint8 role; uint16 job; uint8 tier; uint16 blvl; uint16 jlvl; time_t expires_at; };
+	std::vector<row_t> rows;
+	while (SQL_SUCCESS == Sql_NextRow(mmysql_handle)) {
+		char* c[6];
+		for (int32 i = 0; i < 6; i++) Sql_GetData(mmysql_handle, i, &c[i], nullptr);
+		rows.push_back({
+			(uint8) atoi(c[0]), (uint16)atoi(c[1]), (uint8)atoi(c[2]),
+			(uint16)atoi(c[3]), (uint16)atoi(c[4]), (time_t)atoll(c[5])
+		});
+	}
+	Sql_FreeResult(mmysql_handle);
+	if (rows.empty()) return 0;
+
+	time_t now = time(nullptr);
+	const char* mname = mapindex_id2name(sd->mapindex);
+	if (mname == nullptr) return 0;
+	int32 restored = 0;
+	int64 max_until = 0;
+	for (const auto& r : rows) {
+		bool permanent = (r.expires_at == 0);
+		int32 remaining_min = 0;
+		uint32 dur_ms = 0;
+		if (!permanent) {
+			int32 remaining_sec = (int32)(r.expires_at - now);
+			if (remaining_sec <= 0) {
+				Sql_Query(mmysql_handle,
+					"DELETE FROM dro_merc_contracts WHERE char_id=%u AND role=%u",
+					cid, (uint32)r.role);
+				continue;
+			}
+			remaining_min = (remaining_sec + 59) / 60;
+			dur_ms = (uint32)remaining_min * 60u * 1000u;
+		}
+		if (aichrif_send_hire(
+				(uint32)sd->status.account_id, cid, r.job, r.tier,
+				mname, (uint16)sd->x, (uint16)sd->y,
+				dur_ms, r.blvl, r.jlvl, r.role) != 0)
+			continue;
+		int64 until_val = permanent ? 0x7FFFFFFFLL : (int64)r.expires_at;
+		const char* role_var = (r.role == AI_HIRE_ROLE_TANK)
+			? "ADV_HIRE_TANK_UNTIL" : "ADV_HIRE_SUP_UNTIL";
+		pc_setglobalreg(sd, add_str(role_var), until_val);
+		if (until_val > max_until) max_until = until_val;
+		if (permanent) {
+			Sql_Query(mmysql_handle,
+				"UPDATE dro_merc_contracts SET hired_at=%lld WHERE char_id=%u AND role=%u",
+				(long long)now, cid, (uint32)r.role);
+		} else {
+			Sql_Query(mmysql_handle,
+				"UPDATE dro_merc_contracts SET hired_at=%lld, duration_min=%d "
+				"WHERE char_id=%u AND role=%u",
+				(long long)now, remaining_min, cid, (uint32)r.role);
+		}
+		restored++;
+	}
+	pc_setglobalreg(sd, add_str("ADV_HIRED_UNTIL"), max_until);
+	if (restored > 0)
+		clif_displaymessage(sd->fd,
+			"[DimensionsRO] Aventureiro restaurado apos reinicializacao do servidor.");
+	return restored;
+}
+
+static void aichrif_restore_online_mercs(void){
+	map_foreachpc(aichrif_restore_callback);
+}
+
 /// Handle PACKET_AI_PING { len:W=8, token:L }. Phase 1.1 smoke test only.
 static int32 aichrif_handle_ping(int32 fd){
 	uint32 token = RFIFOL(fd, 4);
 	ShowInfo("ai-server: ping received (token=%u). Sending pong.\n", token);
 	aichrif_send_pong(fd, token);
+	// Phase 6.2 — record ai-server boot moment in mapreg $dro_ai_boot_ts.
+	// token=1 is the first ping after startup; OnPCLoginEvent and the
+	// Treinador NPC use this to detect orphan contracts on subsequent
+	// logins / NPC visits. We also kick off a restore pass for chars
+	// already online RIGHT NOW so they don't have to relog.
+	if (token == 1) {
+		mapreg_setreg(reference_uid(add_str("$dro_ai_boot_ts"), 0), (int)time(nullptr));
+		aichrif_restore_online_mercs();
+	}
 	return 1;
 }
 
@@ -185,6 +309,29 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->status.weapon = 0;
 	sd->status.shield = 0;
 	sd->status.robe = 0;
+	// Phase 6.5 — mercenary uniform. Hired shells (owner_aid != 0) get a
+	// fixed costume set so support+tank look like a matched pair regardless
+	// of base job. Stored as VIEW ids (item_db.View), not item nameids.
+	//   head_top    400446 C_Adventurer_Hat       → View 2385
+	//   head_mid    20439  C_Glow_Of_New_Year     → no view, hat effect 20
+	//   head_bottom 420385 C_Adventurer_Map       → View 2598
+	//   robe        480110 C_Adventure_Cat_Bag    → View 107
+	//   body palette 2
+	if (p->owner_aid != 0) {
+		// Role-based palette. Add new roles by extending the table — index
+		// is AI_HIRE_ROLE_* (see ai_packets.hpp). Falls back to 5 (support)
+		// for unknown roles so a stale client still gets *some* uniform.
+		static constexpr uint8 ROLE_PALETTE[] = {
+			5,	// AI_HIRE_ROLE_SUPPORT
+			3,	// AI_HIRE_ROLE_TANK
+		};
+		uint8 pal = (p->role < std::size(ROLE_PALETTE)) ? ROLE_PALETTE[p->role] : 5;
+		sd->status.clothes_color = pal;
+		sd->status.head_top    = 2385;	// 400446 C_Adventurer_Hat
+		sd->status.head_mid    = 1756;	// 31514  C_American_S_hair
+		sd->status.head_bottom = 2598;	// 420385 C_Adventurer_Map
+		sd->status.robe        = 107;	// 480110 C_Adventure_Cat_Bag
+	}
 	sd->status.body = p->class_; // pc_jobchange sets body = class_; mirror that
 	sd->status.base_level = 1;
 	sd->status.job_level = 1;
@@ -326,6 +473,34 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	// the calc is done.
 	map_addiddb(sd);
 
+	// Phase 6.2 — auto-mount for spear/shield tanker classes. Knight line
+	// rides a Peco; Rune Knight rides a Dragon. The option bit MUST be
+	// set BEFORE status_calc_pc — status_calc_speed reads sc.option to
+	// apply the +25% mounted speed bonus. Setting it after the recalc
+	// (the original placement) left the merc walking at unmounted speed
+	// until the next status recalc — which only happens on damage/buff
+	// events.
+	switch (sd->status.class_) {
+		case JOB_KNIGHT:
+		case JOB_KNIGHT2:
+		case JOB_LORD_KNIGHT:
+		case JOB_LORD_KNIGHT2:
+		case JOB_CRUSADER:
+		case JOB_CRUSADER2:
+		case JOB_PALADIN:
+		case JOB_PALADIN2:
+		case JOB_ROYAL_GUARD:
+		case JOB_ROYAL_GUARD_T:
+			sd->sc.option = (sd->sc.option | OPTION_RIDING);
+			break;
+		case JOB_RUNE_KNIGHT:
+		case JOB_RUNE_KNIGHT_T:
+			sd->sc.option = (sd->sc.option | OPTION_DRAGON1);
+			break;
+		default:
+			break;
+	}
+
 	// Canonical recalc — exactly what pc_authok runs after char load.
 	status_calc_pc(sd, SCO_FIRST);
 
@@ -338,8 +513,17 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	sd->base_status.mode   = (e_mode)(sd->base_status.mode   | MD_CANMOVE | MD_CANATTACK);
 	sd->battle_status.mode = (e_mode)(sd->battle_status.mode | MD_CANMOVE | MD_CANATTACK);
 	if (p->speed > 0) {
-		sd->base_status.speed = p->speed;
-		sd->battle_status.speed = p->speed;
+		// Phase 6.2 — mounted classes already had the +25% speed bonus
+		// applied by status_calc_pc / status_calc_speed (val=25 when
+		// OPTION_RIDING|OPTION_DRAGON is set). The profile speed is the
+		// unmounted base, so apply the same -25% factor manually here
+		// or status_calc_pc's bonus gets overwritten and the tanker
+		// walks at unmounted speed.
+		int32 final_speed = p->speed;
+		if (sd->sc.option & (OPTION_RIDING | OPTION_DRAGON1 | OPTION_DRAGON))
+			final_speed = final_speed * 75 / 100;
+		sd->base_status.speed = (uint16)final_speed;
+		sd->battle_status.speed = (uint16)final_speed;
 	}
 
 	status_set_viewdata(sd, sd->status.class_);
@@ -370,9 +554,20 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 #if PACKETVER >= 20151001
 	clif_changelook(sd, LOOK_HAIR, sd->vd.look[LOOK_HAIR]);
 #endif
-	clif_changelook(sd, LOOK_CLOTHES_COLOR, sd->vd.look[LOOK_CLOTHES_COLOR]);
 	clif_changelook(sd, LOOK_BODY2, sd->vd.look[LOOK_BODY2]);
 	clif_changelook(sd, LOOK_WEAPON, sd->status.weapon);
+	// Phase 6.5 — costume slots for hired mercs. status_calc_pc copied
+	// status.* into vd.look[*] but we still need to broadcast LOOK_HEAD_*
+	// and LOOK_ROBE; the initial spawn packet bakes in only some of them
+	// depending on PACKETVER. CLOTHES_COLOR goes LAST so prior LOOK_BODY2
+	// / LOOK_HEAD_* updates don't clobber the palette client-side.
+	if (p->owner_aid != 0) {
+		clif_changelook(sd, LOOK_HEAD_TOP,    sd->status.head_top);
+		clif_changelook(sd, LOOK_HEAD_MID,    sd->status.head_mid);
+		clif_changelook(sd, LOOK_HEAD_BOTTOM, sd->status.head_bottom);
+		clif_changelook(sd, LOOK_ROBE,        sd->status.robe);
+	}
+	clif_changelook(sd, LOOK_CLOTHES_COLOR, sd->vd.look[LOOK_CLOTHES_COLOR]);
 
 	g_shells[p->shell_id] = sd;
 	if (p->owner_aid != 0) {
@@ -420,7 +615,8 @@ void aishell_destroy(uint32 shell_id){
 // ---------------------------------------------------------------------------
 
 constexpr int16 AI_REPORT_RANGE = 20;   // wider than client AREA so shells engage early
-constexpr int32 AI_REPORT_PERIOD_MS = 1000;
+constexpr int32 AI_REPORT_PERIOD_MS = 1000;       // all shells (population + mercs)
+constexpr int32 AI_MERC_REPORT_PERIOD_MS = 200;   // hired mercs only — fast follow
 
 namespace {
 struct enemy_scan_ctx {
@@ -609,6 +805,22 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 			p.owner_sp_pct = (uint16)((osd->battle_status.sp * 100) / osp_max);
 			p.owner_statuses = ai_collect_statuses(osd);
 			p.owner_target_id = (uint32)osd->ud.target;	// 0 if not engaging
+			// Phase 6.4 — fallback: if the player isn't auto-attacking
+			// (ud.target == 0) but recently damaged a mob via skill /
+			// ranged / splash, treat that mob as the owner's combat
+			// target. Without this the tank ignores everything the
+			// player kills with skills only.
+			if (p.owner_target_id == 0) {
+				auto dit = g_owner_last_damage.find((uint32)osd->status.char_id);
+				if (dit != g_owner_last_damage.end()
+				    && DIFF_TICK(gettick(), dit->second.tick) < AI_OWNER_DAMAGE_TTL_MS) {
+					// Confirm the mob is still alive on this map.
+					block_list* tbl = map_id2bl(dit->second.target_id);
+					if (tbl != nullptr && tbl->type == BL_MOB && !status_isdead(*tbl)) {
+						p.owner_target_id = (uint32)dit->second.target_id;
+					}
+				}
+			}
 			g_owner_seen_once[shell_id] = true;
 			g_owner_last_seen_tick[shell_id] = gettick();
 		} else if (g_owner_seen_once[shell_id]) {
@@ -644,7 +856,16 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 				map_session_data* msd = pd->data[i].sd;
 				if (msd == nullptr) continue;
 				if (msd->status.account_id == sd->status.account_id) continue;	// skip self
-				if (aishell_is_shell((uint32)msd->status.account_id)) continue;	// skip other shells
+				// Phase 6.5 — only include party members on the same map as
+				// the merc. Members on other maps can't be buffed (out of
+				// range for AL_HEAL etc.) and shouldn't count toward the
+				// "is anyone alive on this map" revival gate.
+				if (msd->mapindex != sd->mapindex) continue;
+				// Phase 6.5 — sibling mercs (e.g. support+tank pair owned
+				// by the same player) ARE valid heal/res/buff targets.
+				// Population shells never get added to a player's party so
+				// they won't show up here even without the explicit skip
+				// that used to exclude them.
 				PACKET_AI_PARTY_MEMBER& m = p.party_members[idx];
 				m.account_id = (uint32)msd->status.account_id;
 				uint32 mhp_max = msd->battle_status.max_hp ? msd->battle_status.max_hp : 1;
@@ -661,6 +882,24 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 	WFIFOHEAD(char_fd, sizeof(p));
 	memcpy(WFIFOP(char_fd, 0), &p, sizeof(p));
 	WFIFOSET(char_fd, sizeof(p));
+
+	// Phase 6.2 — push the merc's HP to the owner on every report so the
+	// party widget keeps showing real values across map zones, area
+	// transitions, and other moments where the AREA_WOS broadcast misses.
+	// SP isn't tracked in the party UI so we skip that.
+	if (sd->status.party_id != 0) {
+		struct party_data* pd = party_search(sd->status.party_id);
+		if (pd != nullptr) {
+			for (int32 i = 0; i < MAX_PARTY; i++) {
+				map_session_data* osd = pd->data[i].sd;
+				if (osd == nullptr || osd == sd) continue;
+				if (aishell_is_shell(osd->status.account_id)) continue;
+				clif_hpmeter_single(*osd, sd->id,
+					(uint32)sd->battle_status.hp,
+					(uint32)sd->battle_status.max_hp);
+			}
+		}
+	}
 }
 
 static TIMER_FUNC(aichrif_report_timer){
@@ -669,6 +908,23 @@ static TIMER_FUNC(aichrif_report_timer){
 		map_session_data* sd = kv.second;
 		if (sd == nullptr) continue;
 		aichrif_send_report(kv.first, sd);
+	}
+	return 0;
+}
+
+/// Phase 6.3 — high-frequency report ONLY for hired mercs. The follow tick
+/// reads owner_x/y from the last REPORT, and at 1000ms cadence the merc
+/// looks 1+ seconds behind the player (visible 3+ cell lag). Mercs are
+/// few (1-2 per online player), so a 200ms tick on this subset is cheap.
+static TIMER_FUNC(aichrif_merc_report_timer){
+	if (char_fd < 0 || session[char_fd] == nullptr) return 0;
+	for (auto& kv : g_shells) {
+		uint32 shell_id = kv.first;
+		auto oit = g_owner_aid.find(shell_id);
+		if (oit == g_owner_aid.end() || oit->second == 0) continue;
+		map_session_data* sd = kv.second;
+		if (sd == nullptr) continue;
+		aichrif_send_report(shell_id, sd);
 	}
 	return 0;
 }
@@ -683,8 +939,17 @@ static int32 aichrif_handle_spawn(int32 fd){
 	// party UI (heal targets work via account_id either way).
 	if (sd != nullptr && p->owner_aid != 0) {
 		map_session_data* osd = map_id2sd((int32)p->owner_aid);
-		if (osd != nullptr && osd->status.party_id != 0)
+		if (osd != nullptr && osd->status.party_id != 0) {
 			party_add_aishell(*sd, osd->status.party_id);
+			// Phase 6.2 — party_add_aishell broadcasts the merc's HP via
+			// clif_party_hp(PARTY_AREA_WOS), but the owner's client doesn't
+			// always render the HP bar from that initial broadcast (party
+			// widget tends to wait for a per-target hp packet). Push one
+			// directly to the owner now so the bar starts at full HP
+			// instead of 0% until first damage.
+			clif_hpmeter_single(*osd, sd->id,
+				(uint32)sd->battle_status.hp, (uint32)sd->battle_status.max_hp);
+		}
 	}
 	aichrif_send_spawned_ack(p->shell_id, sd != nullptr, sd != nullptr ? 0 : 1);
 	return 1;
@@ -805,6 +1070,25 @@ static int32 aichrif_handle_cmd(int32 fd){
 				break;
 			}
 			clif_spawn(sd);
+			// Phase 6.2 — re-push HP/xy to party after warp. The party UI
+			// state is preserved server-side, but the owner's client drops
+			// the merc's HP bar to 0% when changing maps until a new
+			// per-target HP packet arrives. Mirror what we do at spawn.
+			if (sd->status.party_id != 0) {
+				struct party_data* pd = party_search(sd->status.party_id);
+				if (pd != nullptr) {
+					for (int32 i = 0; i < MAX_PARTY; i++) {
+						map_session_data* osd = pd->data[i].sd;
+						if (osd == nullptr || osd == sd) continue;
+						if (aishell_is_shell(osd->status.account_id)) continue;
+						clif_hpmeter_single(*osd, sd->id,
+							(uint32)sd->battle_status.hp,
+							(uint32)sd->battle_status.max_hp);
+					}
+				}
+				clif_party_hp(*sd);
+				clif_party_xy(*sd);
+			}
 			ShowStatus("aichrif: WARP shell %u DONE on %s(%d,%d)\n",
 				hdr->shell_id, nm, dx, dy);
 			break;
@@ -932,6 +1216,9 @@ void do_init_map_aichrif(void){
 	add_timer_func_list(aichrif_report_timer, "aichrif_report");
 	add_timer_interval(gettick() + AI_REPORT_PERIOD_MS, aichrif_report_timer,
 		0, 0, AI_REPORT_PERIOD_MS);
+	add_timer_func_list(aichrif_merc_report_timer, "aichrif_merc_report");
+	add_timer_interval(gettick() + AI_MERC_REPORT_PERIOD_MS, aichrif_merc_report_timer,
+		0, 0, AI_MERC_REPORT_PERIOD_MS);
 	add_timer_func_list(aichrif_owner_back_timer, "aichrif_owner_back");
 	add_timer_interval(gettick() + AI_OWNER_BACK_POLL_MS, aichrif_owner_back_timer,
 		0, 0, AI_OWNER_BACK_POLL_MS);

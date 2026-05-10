@@ -72,20 +72,20 @@ int32 parse_console(const char* buf){
 	} else if (strncmpi(buf, "hire ", 5) == 0) {
 		// Phase 6 — manual mercenary hire from the console (Phase A test path,
 		// before the in-game NPC ships in Phase C).
-		// Usage: hire <owner_aid> <owner_cid> <map> <x> <y> [job=8] [tier=2] [dur_ms=600000]
+		// Usage: hire <owner_aid> <owner_cid> <map> <x> <y> [job=8] [tier=2] [dur_ms=600000] [role=0]
 		uint32 owner_aid = 0, owner_cid = 0;
 		char mapn[24] = {0};
 		uint32 x = 0, y = 0;
-		uint32 job = 8, tier = 2, dur = 600000;
-		int n = sscanf(buf + 5, "%u %u %23s %u %u %u %u %u",
-			&owner_aid, &owner_cid, mapn, &x, &y, &job, &tier, &dur);
+		uint32 job = 8, tier = 2, dur = 600000, role = 0;
+		int n = sscanf(buf + 5, "%u %u %23s %u %u %u %u %u %u",
+			&owner_aid, &owner_cid, mapn, &x, &y, &job, &tier, &dur, &role);
 		if (n < 5) {
-			ShowInfo("hire: usage: hire <owner_aid> <owner_cid> <map> <x> <y> [job=8] [tier=2] [dur_ms=600000]\n");
+			ShowInfo("hire: usage: hire <owner_aid> <owner_cid> <map> <x> <y> [job=8] [tier=2] [dur_ms=600000] [role=0sup/1tank]\n");
 		} else {
 			uint32 sid = aichrif_hire((uint16)job, (uint8)tier, owner_aid, owner_cid, mapn,
-				(uint16)x, (uint16)y, dur);
-			if (sid) ShowInfo("hired shell %u for char %u (aid %u, job=%u tier=%u %ums)\n",
-				sid, owner_cid, owner_aid, job, tier, dur);
+				(uint16)x, (uint16)y, dur, 0, 0, (uint8)role);
+			if (sid) ShowInfo("hired shell %u for char %u (aid %u, job=%u tier=%u role=%u %ums)\n",
+				sid, owner_cid, owner_aid, job, tier, role, dur);
 		}
 	} else if (strcmpi(buf, "list") == 0) {
 		aichrif_list_shells();

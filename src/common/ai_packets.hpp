@@ -38,7 +38,7 @@ struct PACKET_AI_SHELL_SPAWN_S {
 	uint8  dir;          // facing 0..7
 	uint8  behavior_id;  // ai-server-side enum (Phase 2)
 	uint8  tier;         // 0=town, 1=field, 2=dungeon (Phase 3.12 stat ramp)
-	uint8  pad;
+	uint8  role;         // Phase 6.5 — AI_HIRE_ROLE_* (was pad)
 	// Phase 6 — mercenary mode. 0 = autonomous shell (population spawner);
 	// non-zero = the BL_PC account_id this shell is hired by. Map-server
 	// resolves the owner via map_id2sd at REPORT time and ai-server uses
@@ -267,13 +267,17 @@ struct PACKET_AI_SHELL_REPORT_S {
 
 /// PACKET_AI_DISMISS_REQUEST (0x2b45) — map -> char -> ai.
 /// Player runs @dismiss / NPC -> ai-server tears down their merc shell
-/// without waiting for the contract timer. No ack. Routed by char_id —
-/// each character owns its own merc independently.
+/// without waiting for the contract timer. No ack. Routed by char_id;
+/// since Phase 6.3 each char can have one merc per role (support, tank)
+/// so we also carry the role to dismiss. role == 0xFF = ALL roles.
 struct PACKET_AI_DISMISS_REQUEST_S {
 	uint16 cmd;
 	uint16 len;
 	uint32 owner_cid;
+	uint8  role;       // AI_HIRE_ROLE_SUPPORT, AI_HIRE_ROLE_TANK, or 0xFF for ALL
+	uint8  pad[3];
 };
+constexpr uint8 AI_HIRE_ROLE_ALL = 0xFF;
 
 /// PACKET_AI_OWNER_BACK (0x2b54) — map -> char -> ai.
 /// Phase 6 — fired by map-server's suspended-owner poll when the merc's
@@ -296,6 +300,13 @@ struct PACKET_AI_OWNER_BACK_S {
 /// point and sends this. ai-server allocates a shell, picks the right
 /// profile tier, and emits a normal SHELL_SPAWN. No ack packet (the
 /// player feels the success when the merc spawns next to them).
+// Phase 6.2 — role flag in HIRE_REQUEST. SUPPORT=0 (default, Acolyte/Priest
+// line, support tick only). TANK=1 (Sw/Crusader/Paladin/RG line, runs combat
+// tick + defensive support). Old build with role=0-implicit still hires
+// support correctly because byte was previously zeroed pad.
+constexpr uint8 AI_HIRE_ROLE_SUPPORT = 0;
+constexpr uint8 AI_HIRE_ROLE_TANK    = 1;
+
 struct PACKET_AI_HIRE_REQUEST_S {
 	uint16 cmd;
 	uint16 len;
@@ -303,7 +314,7 @@ struct PACKET_AI_HIRE_REQUEST_S {
 	uint32 owner_cid;	// Phase 6 — char_id; merc is bound to character, not account
 	uint16 job;       // 4=Acolyte, 8=Priest, 4014=High Priest, 4063=Arch Bishop
 	uint8  tier;      // 0..2 — picked by map-side based on player's level
-	uint8  pad;
+	uint8  role;      // Phase 6.2 — AI_HIRE_ROLE_* (was pad; zero = SUPPORT)
 	char   map_name[MAP_NAME_LENGTH_EXT];
 	uint16 x, y;
 	uint32 duration_ms;

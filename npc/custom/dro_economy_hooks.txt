@@ -1,10 +1,24 @@
 //===== DimensionsRO ==========================================
-//= Economy Hooks — daily Cash bonus.
+//= Economy Hooks — daily Cash bonus + orphan merc restore.
 //===== Description: ==========================================
 //= 1. OnPCLoginEvent: +2 Cash no primeiro login do dia.
 //=    Storage: #DRO_DAILY_CASH_LAST$ (key "AAAA-DDD" do dia do ano).
 //=    Account-scoped — soh um char por conta ganha por dia, simulado
 //=    pelo fato de #CASHPOINTS ser conta-wide.
+//=
+//= 2. OnPCLoginEvent: restore automatico de Aventureiro orfao.
+//=    Quando o ai-server reinicia, todos os shells em memoria
+//=    morrem. O char ainda tem ADV_HIRED_UNTIL > now mas a IA nao.
+//=    Esse hook detecta orfaos no login e re-emite @hire com o
+//=    tempo restante (preferencia: restore > refund, player nao
+//=    perde companhia). Atualiza hired_at = now no contrato pra
+//=    nao re-disparar restore se nao houve novo crash.
+//=
+//=    Pre-condicao: player em party (requisito do @hire). Se nao
+//=    estiver, mostra mensagem e mantem o contrato — restore pode
+//=    rodar no proximo login OU pelo NPC Treinador.
+//=
+//=    Marker pra orfao: $dro_ai_boot_ts > hired_at do contrato.
 //=
 //= O contador de MVP -> Nyangvine (100 kills = 1 Nyan) ESTAVA aqui
 //= como OnNPCKillEvent, mas migrou pra um hook C++ direto em
@@ -32,5 +46,62 @@ OnPCLoginEvent:
 		#DRO_DAILY_CASH_LAST$ = .@today$;
 		dispbottom "[DimensionsRO] +2 Cash de bonus diario. Saldo: " + (#CASHPOINTS) + " Cash.";
 	}
+
+	// Orphan merc restore. Phase 6.3: itera cada role separadamente.
+	if (ADV_HIRE_SUP_UNTIL <= gettimetick(2) && ADV_HIRE_TANK_UNTIL <= gettimetick(2) && ADV_HIRED_UNTIL <= gettimetick(2)) end;
+	if ($dro_ai_boot_ts <= 0) end;
+
+	query_sql("SELECT role, job, tier, base_level, job_level, hired_at, expires_at FROM dro_merc_contracts WHERE char_id=" + getcharid(0),
+		.@role, .@job, .@tier, .@blvl, .@jlvl, .@hired_at, .@expires_at);
+	.@n = getarraysize(.@role);
+	if (.@n == 0) {
+		// Nenhuma linha — hire pre-persistencia. Limpa flags.
+		ADV_HIRED_UNTIL = 0;
+		ADV_HIRE_SUP_UNTIL = 0;
+		ADV_HIRE_TANK_UNTIL = 0;
+		end;
+	}
+
+	if (getcharid(1) == 0) {
+		dispbottom "[DimensionsRO] Aventureiros perdidos em uma reinicializacao. Entre em uma party e relogue (ou visite o Treinador) para restaurar.";
+		end;
+	}
+
+	.@now_ts = gettimetick(2);
+	.@restored = 0;
+	.@max_until = 0;
+	for (.@i = 0; .@i < .@n; .@i++) {
+		// Orphan check por linha — so restaura se a IA bootou depois do hire.
+		if ($dro_ai_boot_ts <= .@hired_at[.@i]) continue;
+
+		.@permanent = (.@expires_at[.@i] == 0);
+		.@remaining_min = 0;
+		if (!.@permanent) {
+			.@remaining_sec = .@expires_at[.@i] - .@now_ts;
+			if (.@remaining_sec <= 0) {
+				query_sql("DELETE FROM dro_merc_contracts WHERE char_id=" + getcharid(0) + " AND role=" + .@role[.@i]);
+				continue;
+			}
+			.@remaining_min = (.@remaining_sec + 59) / 60;
+		}
+		atcommand "@hire " + .@job[.@i] + " " + .@tier[.@i] + " " + .@remaining_min + " " + .@blvl[.@i] + " " + .@jlvl[.@i] + " " + .@role[.@i];
+
+		.@until_val = .@permanent ? 2147483647 : .@expires_at[.@i];
+		if (.@role[.@i] == 1)
+			ADV_HIRE_TANK_UNTIL = .@until_val;
+		else
+			ADV_HIRE_SUP_UNTIL = .@until_val;
+		if (.@until_val > .@max_until) .@max_until = .@until_val;
+
+		if (.@permanent) {
+			query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role[.@i]);
+		} else {
+			query_sql("UPDATE dro_merc_contracts SET hired_at=" + .@now_ts + ", duration_min=" + .@remaining_min + " WHERE char_id=" + getcharid(0) + " AND role=" + .@role[.@i]);
+		}
+		.@restored++;
+	}
+	if (.@max_until > 0) ADV_HIRED_UNTIL = .@max_until;
+	if (.@restored > 0)
+		dispbottom "[DimensionsRO] Aventureiro(s) restaurado(s) apos reinicializacao. (" + .@restored + ")";
 	end;
 }
