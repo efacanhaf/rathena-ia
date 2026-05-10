@@ -3759,6 +3759,11 @@ ACMD_FUNC(kick)
 		return -1;
 	}
 
+	if (aishell_is_shell((uint32)pl_sd->status.account_id)) {
+		clif_displaymessage(fd, "Aventureiros (IA) nao podem ser kickados. Use @dismiss.");
+		return -1;
+	}
+
 	if ( pc_get_group_level(sd) < pc_get_group_level(pl_sd) )
 	{
 		clif_displaymessage(fd, msg_txt(sd,81)); // Your GM level don't authorise you to do this action on this player.

@@ -313,8 +313,7 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	// fixed costume set so support+tank look like a matched pair regardless
 	// of base job. Stored as VIEW ids (item_db.View), not item nameids.
 	//   head_top    400446 C_Adventurer_Hat       → View 2385
-	//   head_mid    20439  C_Glow_Of_New_Year     → no view, hat effect 20
-	//   head_bottom 420385 C_Adventurer_Map       → View 2598
+	//   head_mid    31514  C_American_S_hair      → View 1756
 	//   robe        480110 C_Adventure_Cat_Bag    → View 107
 	//   body palette 2
 	if (p->owner_aid != 0) {
@@ -329,7 +328,7 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 		sd->status.clothes_color = pal;
 		sd->status.head_top    = 2385;	// 400446 C_Adventurer_Hat
 		sd->status.head_mid    = 1756;	// 31514  C_American_S_hair
-		sd->status.head_bottom = 2598;	// 420385 C_Adventurer_Map
+		sd->status.head_bottom = 0;
 		sd->status.robe        = 107;	// 480110 C_Adventure_Cat_Bag
 	}
 	sd->status.body = p->class_; // pc_jobchange sets body = class_; mirror that
