@@ -6,6 +6,68 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## 2026-05-10
+
+### Adicionado — Sistema de Aventureiros (mercenários)
+
+- Novo NPC **Treinador** em `prt_in (44, 113)` que contrata um Aventureiro
+  pra te seguir e ajudar na aventura. Cada personagem pode ter **dois
+  aventureiros simultaneamente — um Suporte e um Tanker**, contratados
+  separados.
+- Os aventureiros vêm com classe e nível **espelhando o líder da party**
+  (ou o seu, se solo), aparecem na barra de party com HP/SP visíveis e
+  podem ser dispensados pelo NPC ou via `@dismiss tank` / `@dismiss support`.
+- **Persistência completa**: dura quanto durou o contrato, sobrevive a
+  logout, troca de mapa e restart do servidor — quando o servidor volta,
+  os aventureiros vivos no momento do crash são restaurados automaticamente
+  ao seu lado (sem precisar recontratar nem refund).
+
+### Adicionado — Aventureiro Tanker (Royal Guard)
+
+- Tanker linha de **Cavaleiro Real** (Sw → Crusader → Paladin → Royal
+  Guard) com mount automática e auto-buffs (Auto Guard, Endure, Reflect
+  Shield, Force of Vanguard, Prestige).
+- **Posicionamento ativo**: fica 5 células à frente do líder usando
+  predição de movimento, mas sai dessa formação assim que entra em
+  combate pra cobrir o que o líder está atacando.
+- **Geração de aggro sem auto-attack**: o tanker spamma **Provoke** pra
+  pegar threat (pula em Undead/MVP, onde Provoke não funciona),
+  **Over Brand** quando há 2+ mobs em volta do alvo, e **Banishing Point**
+  pra single-target. Não dá tapa — toda a barra de damage vem das skills.
+- **Defesa do líder**: usa **Devotion** pra absorver o dano, **Heal** se
+  o HP do líder cai, e engaja no mob que machucou o líder mesmo que o
+  líder não esteja em auto-attack (skills de dano também ativam o tank).
+
+### Adicionado — Aventureiro Suporte (Arch Bishop)
+
+- Suporte linha de **Acólito** com rotação de cura/buff completa: AL_HEAL,
+  Blessing, Increase AGI, Kyrie Eleison, Aspersio, Magnificat, Assumptio,
+  Sacrament, Expiatio, Highness Heal, Coluna do Senhor, etc.
+- **Cura e buff em qualquer membro da party** (incluindo o tanker
+  irmão): se o líder está OK mas o tanker está machucado, o suporte cura
+  o tanker; se o líder não tem Blessing mas o tanker tem, o suporte vai
+  buffar o tanker. **Resurrection** também — ressuscita líder, tanker, ou
+  qualquer membro morto da party (no mesmo mapa).
+- **Filtro de mapa**: só considera membros da party que estão no **mesmo
+  mapa** que o aventureiro — não tenta curar quem está em outra área.
+
+### Alterado — Visual dos Aventureiros
+
+- Todos os aventureiros usam um uniforme fixo (independente da classe
+  base): **Adventurer Hat** (top), **American S Hair** (mid), **Adventurer
+  Map** (bottom), **Adventure Cat Bag** (manto).
+- **Palette do corpo distingue a função**: Suporte usa palette 5,
+  Tanker usa palette 3 — fácil identificar à distância no campo.
+
+### Alterado — Comportamento de respawn ao morrer
+
+- Quando o aventureiro morre, ele cai como cadáver no chão (não fica de
+  pé sem vida) e só ressuscita após **30 segundos fora de combate** do
+  líder.
+- Se a party inteira no mapa estiver morta, o aventureiro **não
+  ressuscita** — espera alguém da party voltar com HP > 0 antes de
+  reaparecer (evita o tank renascer dentro do wipe e re-morrer).
+
 ## 2026-05-09
 
 ### Alterado — Recompensa de MVP em Nyangvine
@@ -233,7 +295,6 @@ Implementação dos NPCs oficiais kRO Booster Event via `barters.yml`
   → 4 armor crates (Atk/Ran/Ele/Defn); Metal_W_Ticket → 12 Metal weapons
   (Two_Hand_Sword, Lance, Mace, Two_Handed_Axe, Dagger, Book, Staff, Katar,
   Bow, Revolver, Huuma_Shuriken, Foxtail).
-
 
 Release inicial consolidado da DimensionsRO. Esta versão agrega todas as
 modificações desde o fork do upstream rAthena (`master` original) até o estado
