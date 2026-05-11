@@ -229,6 +229,22 @@ Body:
       NoMail: true
       NoAuction: true
 
+# DimensionsRO custom — Runa Catalisadora (Lux Anima Lite recipe).
+# Material alternativo de craft da Lux Anima. Vendida pelo Damontiê
+# (prontera 144,284) a 3 Booster Coin cada. NoTrade + NoDrop pra impedir
+# market flip de BC via Catalisadora.
+  - Id: 1270200
+    AegisName: Runa_Catalisadora
+    Name: Runa Catalisadora
+    Type: Etc
+    Weight: 1
+    Trade:
+      NoDrop: true
+      NoTrade: true
+      NoSell: true
+      NoMail: true
+      NoAuction: true
+
 #Body:
 # THQ Quest Items
 #=============================================================
