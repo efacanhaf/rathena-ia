@@ -23,8 +23,6 @@ Novo NPC vende em troca de Booster Coin:
 |---|---|---|
 | Runa Catalisadora | 3 BC | Material da Lux Anima Lite |
 | Battle Manual | 5 BC | +50% EXP por 30 min |
-| Field Manual 25% | 1 BC | +25% EXP por 30 min |
-| Field Manual 100% | 10 BC | +100% EXP por 60 min |
 | Bubble Gum | 10 BC | +100% drop por 30 min |
 
 

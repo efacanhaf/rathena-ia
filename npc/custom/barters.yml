@@ -423,25 +423,13 @@ Body:
             Item: Booster_Coin
             Amount: 3
       - Index: 1
-        Item: Battle_Manual                # Field Manual +100% EXP 30min (12208)
+        Item: Battle_Manual                # Field Manual +50% EXP 30min (12208) - server custom
         RequiredItems:
           - Index: 0
             Item: Booster_Coin
             Amount: 5
       - Index: 2
-        Item: Battle_Manual25              # Field Manual 25% (14532)
-        RequiredItems:
-          - Index: 0
-            Item: Booster_Coin
-            Amount: 1
-      - Index: 3
         Item: Bubble_Gum                   # Bubble Gum +100% drop 30min (12210)
-        RequiredItems:
-          - Index: 0
-            Item: Booster_Coin
-            Amount: 10
-      - Index: 4
-        Item: Battle_Manual100             # Field Manual 100% (+100% EXP 60min) (14533)
         RequiredItems:
           - Index: 0
             Item: Booster_Coin
