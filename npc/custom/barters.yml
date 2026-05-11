@@ -440,3 +440,9 @@ Body:
           - Index: 0
             Item: Booster_Coin
             Amount: 10
+      - Index: 4
+        Item: Battle_Manual100             # Field Manual 100% (+100% EXP 60min) (14533)
+        RequiredItems:
+          - Index: 0
+            Item: Booster_Coin
+            Amount: 10
