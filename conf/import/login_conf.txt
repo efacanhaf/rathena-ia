@@ -9,3 +9,8 @@
 // Enabling use_MD5_passwords would cause the server to reject MD5-mode
 // clients with "Rejected from server" (see loginclif.cpp:312-315).
 use_MD5_passwords: yes
+
+// Disable legacy in-client account auto-creation via _M / _F suffix.
+// All account creation must go through the Discord registration bot.
+// (Reconciliação do ViniAD em 2026-05-11 — conta foi criada via _M legacy)
+new_account: no
