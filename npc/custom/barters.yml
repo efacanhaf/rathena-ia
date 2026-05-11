@@ -439,4 +439,4 @@ Body:
         RequiredItems:
           - Index: 0
             Item: Booster_Coin
-            Amount: 5
+            Amount: 10
