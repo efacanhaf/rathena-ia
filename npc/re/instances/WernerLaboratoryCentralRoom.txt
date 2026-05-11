@@ -1003,6 +1003,7 @@ OnTouch:
 			erasequest 7739;// Find Star of Blessing!
 			setquest 7740;// Star of Blessing obtained
 			terra_gloria_main = 22;
+			callfunc "F_GrantBoosterCoin", 3;
 		}
 		close2;
 		setpcblock PCBLOCK_NPC, true;

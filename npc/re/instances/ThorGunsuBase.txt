@@ -292,7 +292,7 @@ OnInstanceInit:
 		end;
 	mes "[Pile of documents]";
 	mes "All kinds of documents are all mixed up.";
-	mes "The top chapter is... ¡®If you feed a magmaring a potato and then hunt it after a while, should it drop a baked potato?'";
+	mes "The top chapter is... ï¿½ï¿½If you feed a magmaring a potato and then hunt it after a while, should it drop a baked potato?'";
 	next;
 	mes "[Pile of documents]";
 	mes "...Why is this here? But I'm curious about the results!";
@@ -461,6 +461,7 @@ OnInstanceInit:
 			erasequest 16579;
 			setquest 16580;
 			getitem 1000405,50;	// Ep18_Amethyst_Fragment
+			callfunc "F_GrantBoosterCoin", 2;
 		}
 		close2;
 		warp "wolfvill",162,154;

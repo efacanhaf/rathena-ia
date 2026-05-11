@@ -92,6 +92,7 @@ dali02,97,142,3	script	Professor Bernhard#a1	4_LGTSCIENCE,{
 				erasequest 9337;// Wrapping up the Adventure
 			if (sarah_fenrir == 0) {
 				sarah_fenrir = 1;
+				callfunc "F_GrantBoosterCoin", 3;
 				getitem (28310+.@s),1;
 			}
 			close;

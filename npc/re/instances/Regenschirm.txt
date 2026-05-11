@@ -605,6 +605,7 @@ OnFail:
 	mes "We're going to wait for you in the Cat on Bullet.";
 	mes "Please head there and meet us in the headquarters.";
 	completequest 7862;
+	callfunc "F_GrantBoosterCoin", 3;
 	close2;
 	if (.@s == 1)
 		warp "einbroch",301,324;

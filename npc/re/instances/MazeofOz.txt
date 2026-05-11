@@ -533,6 +533,7 @@ OnTimer2000:
 		erasequest 11719;
 		setquest 11720;
 		ep18_main = 31;
+		callfunc "F_GrantBoosterCoin", 2;
 	}
 	cloakonnpcself( .@miriam7$ );
 	cloakonnpcself( .@imril7$ );

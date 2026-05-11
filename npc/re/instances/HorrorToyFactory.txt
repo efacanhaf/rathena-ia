@@ -1354,6 +1354,7 @@ OnStart:
 		close;
 	}
 	close2;
+	callfunc "F_GrantBoosterCoin", 2;
 	warp "xmas",233,300;
 	end;
 }

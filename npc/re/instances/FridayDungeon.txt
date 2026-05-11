@@ -43,6 +43,7 @@ gef_tower,57,170,3	script	Marry Jay	4_F_JOB_BLACKSMITH,{
 		close;
 	case 2:
 		erasequest 12379;
+		callfunc "F_GrantBoosterCoin", 2;
 		mes "[Marry Jay]";
 		mes "The cooldown has expired.";
 		mes "You may re-enter the Memorial Dungeon.";

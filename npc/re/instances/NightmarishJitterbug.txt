@@ -63,6 +63,7 @@ moc_para01,26,95,5	script	Roel#sara	4_M_ROEL,{
 			setquest 13183;// Nightmarish Jitterbug: Completed
 			completequest 13183;
 			getexp 1500000,500000;
+			callfunc "F_GrantBoosterCoin", 2;
 			close3;
 		}
 		end;
@@ -108,6 +109,7 @@ moc_para01,26,95,5	script	Roel#sara	4_M_ROEL,{
 			mes "Adventuring is always fun. Be a great adventurer, okay?";
 			erasequest 13181;
 			getexp 1500000,500000;
+			callfunc "F_GrantBoosterCoin", 2;
 			close3;
 		}
 	}

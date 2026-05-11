@@ -2196,6 +2196,10 @@ L_Reward:
 	else if (.@r < 831) getitem 6471, 20; //Goast_Chill
 	else if (.@r < 914) getitem 6470, 20; //Blood_Thirst
 	else                getitem 6469, 20; //Will_Of_Warrior
+	if ('wc_coin_granted == 0) {
+		'wc_coin_granted = 1;
+		callfunc "F_GrantBoosterCoin", 3;
+	}
 	return;
 
 OnInstanceInit:

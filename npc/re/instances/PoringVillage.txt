@@ -681,6 +681,7 @@ OnTouch:
 	mes "I don't need this novice box. You can take it. Now, let's go out side!";
 	close2;
 	getitem 23302,1;	// PoringsPreciousBox
+	callfunc "F_GrantBoosterCoin", 1;
 	warp "prt_fild05",149,238;
 	end;
 }

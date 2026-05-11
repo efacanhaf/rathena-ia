@@ -448,6 +448,7 @@ OnTimer10000:
 		getitem 25668,1;
 		getitem 25723,5;
 		getexp 300000,300000;
+		callfunc "F_GrantBoosterCoin", 2;
 		close;
 	}
 	select("Ask about Miguel");

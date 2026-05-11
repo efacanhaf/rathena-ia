@@ -669,8 +669,10 @@ OnInstanceInit:
 OnTouch:
 	mes "Do you want to go out from the octopus dungeon?";
 	next;
-	if(select("No!:Yes!") == 2)
+	if(select("No!:Yes!") == 2) {
+		callfunc "F_GrantBoosterCoin", 1;
 		warp "mal_dun01",153,233;
+	}
 	close;
 }
 1@cash,198,82,0	duplicate(oct_exit_1)	oct_exit_2	45,2,2

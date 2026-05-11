@@ -832,6 +832,7 @@ OnStart:
 	mapannounce 'map_name$, "MA-4885: Cannot guarantee what kind of dimension will be met due to the instability of the gateway...", bc_map, 0xffff00,FW_NORMAL,13,0;
 	sleep 5000;
 	mapannounce 'map_name$, "MA-4885: If there are any surviving organisms I wish you luck. I hope to see you again.", bc_map, 0xffff00,FW_NORMAL,13,0;
+	callfunc "F_GrantBoosterCoin", 3;
 	enablenpc instance_npcname("lab_warp#end");
 	end;
 }

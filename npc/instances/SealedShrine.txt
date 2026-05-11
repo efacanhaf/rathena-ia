@@ -1167,6 +1167,7 @@ OnInstanceInit:
 		mes "If you leave, please say hello to Patrick for me.";
 		cutin "",255;
 		set 'ins_baphomet,0;
+		callfunc "F_GrantBoosterCoin", 1;
 		warp "monk_test",310,150;
 		close;
 	case 2:

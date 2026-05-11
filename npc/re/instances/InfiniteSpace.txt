@@ -624,6 +624,7 @@ OnPoringKill:
 	mes "[ Reckless Explorer ]";
 	mes "So, shall we get out of here?";
 	close2;
+	callfunc "F_GrantBoosterCoin", 2;
 	warp "cmd_fild07",53,270;
 	end;
 }

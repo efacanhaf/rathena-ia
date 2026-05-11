@@ -614,6 +614,7 @@ OnDisable:
 		erasequest 7692;
 		setquest 7693;// Surprise Attack
 		ep16_royal = 9;
+		callfunc "F_GrantBoosterCoin", 2;
 		next;
 		mes "[Kronecker]";
 		mes "Whoever left here, clear out with the wounded near you!";

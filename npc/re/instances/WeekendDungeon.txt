@@ -67,6 +67,7 @@ pay_arche,44,124,5	script	Marry Jae	4_F_JOB_BLACKSMITH,{
 	case 2:
 		erasequest 12377;
 		erasequest 12378;
+		callfunc "F_GrantBoosterCoin", 2;
 		mes "[Marry Jae]";
 		mes "The cooldown has expired.";
 		mes "You may re-enter the Memorial Dungeon.";
