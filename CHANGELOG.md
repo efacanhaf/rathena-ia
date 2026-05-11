@@ -9,6 +9,26 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 2026-05-11
 
+### Adicionado — Receita Lite da Runa Lux Anima
+
+- **Nova receita alternativa** para a **Runa Lux Anima** do Rune Knight: agora pode ser forjada com **1 Gold + 3 Light Granule + 3 Runa Catalisadora** (em vez de 3 Gold + 3 Light Granule). A receita original continua valendo para quem prefere queimar Gold sobrando.
+- **Runa Catalisadora** é um material novo, comprável no novo NPC **Damontiê** (prontera 144,284) a **3 Booster Coin cada**. Item ligado ao char (não pode trade, drop ou vender).
+- **Por quê:** Gold continuou impraticável mesmo após o buff de 2026-05-07. Em vez de empilhar buff em cima de buff de drop, agora a Lux Anima ganha um caminho previsível via Booster Coin (das instâncias), preservando o prestígio da receita original.
+
+### Adicionado — Damontiê (Prontera 144,284)
+
+Novo NPC vende em troca de Booster Coin:
+
+| Item | Custo | Efeito |
+|---|---|---|
+| Runa Catalisadora | 3 BC | Material da Lux Anima Lite |
+| Battle Manual | 5 BC | +100% EXP por 30 min |
+| Field Manual 25% | 1 BC | +25% EXP por 30 min |
+| Bubble Gum | 5 BC | +100% drop por 30 min |
+
+
+## 2026-05-11
+
 ### Adicionado — Booster Coin como recompensa de instances
 
 - Toda instance (51 no total) agora dá **Booster Coin** ao derrotar o boss
