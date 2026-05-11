@@ -6,6 +6,62 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+
+## 2026-05-11
+
+### Adicionado — Booster Coin como recompensa de instances
+
+- Toda instance (51 no total) agora dá **Booster Coin** ao derrotar o boss
+  final, tieradas por dificuldade:
+  - **Easy (2 BC)**: Bakonawa, Bangungot, Buwaya, Eclage, Hazy Forest, Isle of
+    Bios, Malangdo Culvert, Octopus, Sealed Shrine, Orcs Memory
+  - **Medium (5 BC)**: Airship Assault, Charleston, Deep Forest, Devil Tower,
+    EDDA, Faceworms, Friday/Weekend Dungeon, Ghost Palace, Heart Hunter,
+    Hidden Garden, Horror Toy, Infinite Space, Last Room, Lost Farm, Maze of
+    Oz, Morse Cave, Nightmarish Jitterbug, Os Occupation, Ritual of Blessing,
+    Room of Consciousness, Sara Memory, Sealed Os, Sky Fortress, Villa de
+    Deception/HighPriest (Normal), Water Garden, Nydhogg, Endless Tower
+  - **Hard (10 BC)**: Central Lab, Cor Operation, Regenschirm, Sarah and Fenrir,
+    Temple of Demon God, Werner Lab, Wolves, OGH Normal e Hard
+  - **Mega (20 BC)**: Villa of Deception Hard
+- **Cap diário: 30 Booster Coin por conta.** Reseta na virada do dia. Se voce
+  atingir o cap, o servidor avisa e os Coins extras nao dropam.
+- **Compartilhado pela party humana** no mapa do boss (aventureiros IA nao
+  recebem). Cada player tem o proprio cap diario.
+
+### Alterado — Nyangvine de MVP virou estocastico com pity
+
+- Matar um **MVP do mundo aberto** agora da **10% de chance** de dropar 1
+  Nyangvine (antes era garantido toda vez).
+- **Pity em 10 kills**: se voce matar 10 MVPs sem dropar, o 10o e
+  garantido. Reseta no drop. Contador per-conta.
+- **MVPs de instance NAO dropam Nyangvine** (ja pagam via Booster Coin).
+  Os MVPs do MVP Tracker continuam sendo a referencia de "MVPs do mundo".
+
+### Alterado — Aventureiros IA
+
+- Varios crashes de comandos GM (`@kick`, `@recallall`, etc) em aventureiros
+  foram corrigidos. Servidor nao cai mais quando voce usa esses comandos
+  com aventureiros perto.
+- **Kill credit**: quando o Tanker IA da o killing blow, o credito agora vai
+  pro **dono humano** — quest progress, MVP drops, EXP, achievement. Antes o
+  kill era perdido.
+- **Auto-restore**: depois de qualquer reinicializacao do servidor, os
+  aventureiros voltam sozinhos em ate 15 segundos. Nao precisa mais relogar
+  pra traze-los.
+- **Instances**: aventureiros entram corretamente em instances com o dono.
+  Antes ficavam pra tras.
+- **Follow apertado**: aparecem em 3x3 ao redor do dono ao warpar (era 9x9).
+- **Portais NPC**: aventureiros agora atravessam warp tiles igual o player.
+- **Uniforme Tank**: paleta de cor do Royal Guard corrigida.
+
+### Adicionado — Chat dos aventureiros em PT-BR
+
+- ~295 linhas espontaneas dos aventureiros (cumprimentos, brincadeiras,
+  reacoes) traduzidas em 14 categorias. Em vez de ingles, agora falam em
+  portugues coloquial brasileiro.
+
+
 ## 2026-05-10
 
 ### Adicionado — Sistema de Aventureiros (mercenários)

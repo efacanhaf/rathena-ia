@@ -37,6 +37,14 @@ int32 aichrif_try_handle(int32 fd);
 /// player-only logic (party EXP share, etc.).
 bool aishell_is_shell(uint32 account_id);
 
+/// Return the human owner sd for a hired shell. Returns nullptr if the
+/// shell is autonomous, owner offline, or the bound character isn't the
+/// one currently logged in on the owner account. mob_dead etc. use this
+/// to re-credit kills back to the player whose tank shell landed the
+/// killing blow.
+class map_session_data;
+map_session_data* aishell_get_owner(uint32 shell_account_id);
+
 /// Phase 6 — send a HIRE_REQUEST upstream (map -> char -> ai). Returns 0 on
 /// success, -1 if char-server isn't connected. base_level_override /
 /// job_level_override = 0 means "use the profile's stat ramp"; non-zero

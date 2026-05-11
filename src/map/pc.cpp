@@ -2017,6 +2017,22 @@ bool pc_lastpoint_special( map_session_data& sd ){
 
 	// Check if the last point was an instance
 	if( sd.status.last_point_instanceid == 0 ){
+		// Saved on an instance template map (e.g., "1@gl_k") but no
+		// reconnect data — happens when the save bypassed the normal
+		// instance flow (crash, kill -9, race during instance teardown).
+		// The template map has no NPCs / spawns, so the player gets stuck.
+		// Auto-rescue: warp to save_point.
+		if( mapdata->instance_id > 0 || mapdata->name[0] == '1' || mapdata->name[0] == '2'
+		    || mapdata->name[0] == '3' || mapdata->name[0] == '4' || mapdata->name[0] == '5'
+		    || mapdata->name[0] == '6' || mapdata->name[0] == '7' || mapdata->name[0] == '8'
+		    || mapdata->name[0] == '9' ){
+			// rAthena convention: instance maps start with a digit followed
+			// by '@'. Templates do too. If they're saved on one without a
+			// valid reconnect record, push them home.
+			if( strchr( mapdata->name, '@' ) != nullptr ){
+				return true;
+			}
+		}
 		// Nothing to do
 		return false;
 	}

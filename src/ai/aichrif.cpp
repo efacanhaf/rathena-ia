@@ -178,6 +178,18 @@ int32  g_spawn_emitted = 0;
 // map-server has finished its initialize() and is parsing AI packets).
 // Reset on reconnect so we re-probe after a map restart.
 bool   g_map_ready = false;
+// Map-restart detection: if map-server crashes / restarts WITHOUT char-server
+// losing connection, ai-server's char_fd stays up but pongs stop arriving.
+// We watch for that and re-handshake the map session (reset ping token to 0
+// so the next ping fires as token=1, which triggers map-server's restore
+// callback to re-spawn hired mercs for every online player).
+t_tick g_last_pong_tick = 0;
+int32  g_pings_since_last_pong = 0;
+// Threshold: ping interval is 5s, so 3 missed pongs = ~15s silence.
+constexpr int32 AI_MAP_DEAD_AFTER_MISSED_PONGS = 3;
+// Mutable ping token (was static-local; lifted to file scope so the
+// map-restart detector can reset it to 0).
+uint32 g_ping_token = 0;
 constexpr int32 SPAWN_BATCH_PER_TICK = 20;
 // Phase 6 — autonomous spawner is paused while we focus on the mercenary
 // system (Acolyte/Priest line). Set to >0 later to bring back ambient
@@ -461,12 +473,12 @@ int32 aichrif_send_despawn(int32 fd, uint32 shell_id, uint8 reason){
 }
 
 int32 aichrif_send_ping(int32 fd){
-	static uint32 token = 0;
-	token++;
+	g_ping_token++;
+	g_pings_since_last_pong++;
 	WFIFOHEAD(fd, 8);
 	WFIFOW(fd, 0) = PACKET_AI_PING;
 	WFIFOW(fd, 2) = 8;
-	WFIFOL(fd, 4) = token;
+	WFIFOL(fd, 4) = g_ping_token;
 	WFIFOSET(fd, 8);
 	return 0;
 }
@@ -725,6 +737,8 @@ static int32 aichrif_parse_pong(int32 fd){
 	int32 plen = RFIFOW(fd, 2);
 	if (plen < 8 || RFIFOREST(fd) < (size_t)plen) return 0;
 	uint32 token = RFIFOL(fd, 4);
+	g_last_pong_tick = gettick();
+	g_pings_since_last_pong = 0;
 	if (!g_map_ready) {
 		g_map_ready = true;
 		ShowStatus("ai-server: map-server is ready (first pong, token=%u). Spawn drain unlocked.\n", token);
@@ -892,8 +906,33 @@ static TIMER_FUNC(aichrif_check_connect_timer){
 }
 
 static TIMER_FUNC(aichrif_ping_timer){
-	if (aichrif_state == 2 && char_fd >= 0)
+	if (aichrif_state == 2 && char_fd >= 0) {
+		// Detect map-server crash/restart while char-server stayed up.
+		// If the last AI_MAP_DEAD_AFTER_MISSED_PONGS pings produced no
+		// pong, the map process must have died (or paused beyond our
+		// tolerance). Reset the token counter so the next ping fires as
+		// token=1 — this is the map-server's signal to run its boot
+		// restore callback (re-spawning hired mercs for online players).
+		if (g_map_ready && g_pings_since_last_pong >= AI_MAP_DEAD_AFTER_MISSED_PONGS) {
+			ShowWarning("ai-server: map-server unresponsive (no pong for %d pings) — resetting session.\n",
+				g_pings_since_last_pong);
+			g_map_ready = false;
+			g_ping_token = 0;	// next ping = token 1 (fresh handshake)
+			g_pings_since_last_pong = 0;
+			// Wipe local shell state. All shells on the old map died with
+			// it; keeping g_merc_by_owner would make the dedup check in
+			// aichrif_hire reject the upcoming restore_callback re-hires
+			// from map-server, leaving players merc-less. g_shells_local
+			// + g_shell_idx are cleared too so stale state.cur_mapindex
+			// values don't drive ghost follow/warp logic.
+			ShowStatus("ai-server: clearing stale shell state (%zu shells, %zu merc bindings).\n",
+				g_shells_local.size(), g_merc_by_owner.size());
+			g_shells_local.clear();
+			g_shell_idx.clear();
+			g_merc_by_owner.clear();
+		}
 		aichrif_send_ping(char_fd);
+	}
 	return 0;
 }
 

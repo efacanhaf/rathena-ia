@@ -1899,11 +1899,14 @@ int32 npc_touch_areanpc(map_session_data* sd, int16 m, int16 x, int16 y, npc_dat
 	nullpo_retr(0, sd);
 	nullpo_retr(0, nd);
 
-	// Phase 6 — ai-shell mercenaries shouldn't trigger portals or
-	// OnTouch scripts; they only follow the owner. The follow_timer
-	// drives cross-map movement via WARP packets directly, so any
-	// "warp via portal walk" would just yank them off the owner's path.
-	if (aishell_is_shell((uint32)sd->status.account_id))
+	// AI-shell mercenaries can't run OnTouch scripts (no client to drive
+	// dialog) — those would crash. But WARP-type NPCs are fine, and in
+	// fact desirable: it lets shells follow an owner who walked through
+	// a portal under their own feet (instead of relying purely on the
+	// follow_timer's WARP packet, which can lag by 1-2 ticks). The warp
+	// case below uses a manual map_addblock path to avoid pc_setpos,
+	// which would invoke chrif_save and crash on a shell sd.
+	if (aishell_is_shell((uint32)sd->status.account_id) && nd->subtype != NPCTYPE_WARP)
 		return 1;
 
 	if (nd->is_invisible)
@@ -1943,6 +1946,22 @@ int32 npc_touch_areanpc(map_session_data* sd, int16 m, int16 x, int16 y, npc_dat
 			ShowWarning("Prevented infinite warp loop for player (%d:%d). Please fix NPC: '%s', path: '%s'\n", sd->status.account_id, sd->status.char_id, nd->exname, nd->path);
 			sd->count_rewarp = 0;
 			break;
+		}
+		if (aishell_is_shell((uint32)sd->status.account_id)) {
+			// Manual warp — pc_setpos calls chrif_save which crashes on
+			// a shell sd (no char row). Mirrors what AI_CMD_WARP does
+			// in src/map/aichrif.cpp.
+			int16 nm = map_mapindex2mapid(nd->u.warp.mapindex);
+			if (nm < 0) break;
+			clif_clearunit_area(*sd, CLR_TELEPORT);
+			map_delblock(sd);
+			sd->m = nm;
+			sd->x = nd->u.warp.x;
+			sd->y = nd->u.warp.y;
+			sd->mapindex = nd->u.warp.mapindex;
+			if (map_addblock(sd) == 0)
+				clif_spawn(sd);
+			return 2;
 		}
 		pc_setpos(sd, nd->u.warp.mapindex, nd->u.warp.x, nd->u.warp.y, CLR_OUTSIGHT);
 		return 2;
