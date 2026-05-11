@@ -403,3 +403,40 @@ Body:
           - Index: 0
             Item: Nyangvine_Fruit
             Amount: 12
+
+###########################################################################
+##= Damontiê — Mercador de catalisadores e manuais (Prontera 144, 284)
+##= Aceita Booster_Coin (1000254). Catalisador material da Lux Anima Lite
+##= recipe + manuais/gomas em troca de BC.
+###########################################################################
+  - Name: Damontie#dro_lux
+    Map: prontera
+    X: 144
+    Y: 284
+    Direction: South
+    Sprite: 4_M_OLDFRIAR
+    Items:
+      - Index: 0
+        Item: Runa_Catalisadora            # Lux Anima Lite material (1270200)
+        RequiredItems:
+          - Index: 0
+            Item: Booster_Coin
+            Amount: 3
+      - Index: 1
+        Item: Battle_Manual                # Field Manual +100% EXP 30min (12208)
+        RequiredItems:
+          - Index: 0
+            Item: Booster_Coin
+            Amount: 5
+      - Index: 2
+        Item: Battle_Manual25              # Field Manual 25% (14532)
+        RequiredItems:
+          - Index: 0
+            Item: Booster_Coin
+            Amount: 1
+      - Index: 3
+        Item: Bubble_Gum                   # Bubble Gum +100% drop 30min (12210)
+        RequiredItems:
+          - Index: 0
+            Item: Booster_Coin
+            Amount: 5
