@@ -6387,9 +6387,24 @@ void clif_skill_produce_mix_list( map_session_data& sd, int32 skill_id, int32 tr
 			continue;
 		}
 
+		// DimensionsRO: dedupe — produce_db may have multiple recipes for the
+		// same nameid (e.g., Lux Anima original + Lite). The selection logic
+		// in skill_can_produce_mix already picks the best recipe by nameid,
+		// so the menu should list each producable item only once.
+		t_itemid display_id = client_nameid( skill_produce_db[i].nameid );
+		bool already_listed = false;
+		for( int32 k = 0; k < count; k++ ){
+			if( p->items[k].itemId == display_id ){
+				already_listed = true;
+				break;
+			}
+		}
+		if( already_listed )
+			continue;
+
 		PACKET_ZC_MAKABLEITEMLIST_sub& entry = p->items[count];
 
-		entry.itemId = client_nameid( skill_produce_db[i].nameid );
+		entry.itemId = display_id;
 		entry.material[0] = 0;
 		entry.material[1] = 0;
 		entry.material[2] = 0;
