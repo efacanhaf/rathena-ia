@@ -27,8 +27,6 @@ Novo NPC vende em troca de Booster Coin:
 | Bubble Gum | 5 BC | +100% drop por 30 min |
 
 
-## 2026-05-11
-
 ### Adicionado — Booster Coin como recompensa de instances
 
 - Toda instance (51 no total) agora dá **Booster Coin** ao derrotar o boss
