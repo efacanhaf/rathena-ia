@@ -12784,65 +12784,75 @@ int16 skill_can_produce_mix(map_session_data *sd, t_itemid nameid, int32 trigger
 	if (!item_db.exists(nameid))
 		return 0;
 
-	int16 i, j;
-
-	for (i = 0; i < MAX_SKILL_PRODUCE_DB; i++) {
-		if (skill_produce_db[i].nameid == nameid) {
-			if ((j = skill_produce_db[i].req_skill) > 0 &&
-				pc_checkskill(sd,j) < skill_produce_db[i].req_skill_lv)
-				continue; // must iterate again to check other skills that produce it. [malufett]
-			if (j > 0 && sd->menuskill_id > 0 && sd->menuskill_id != j)
-				continue; // special case
-			break;
-		}
-	}
-
 	if (nameid == ITEMID_HOMUNCULUS_SUPPLEMENT) { // Temporary check since the produce_db specifically wants the Pharmacy skill to use
 		if (pc_checkskill(sd, AM_BIOETHICS) == 0)
 			return 0;
 	}
 
-	if (i >= MAX_SKILL_PRODUCE_DB)
-		return 0;
-
 	// Cannot carry the produced stuff
 	if (pc_checkadditem(sd, nameid, qty) == CHKADDITEM_OVERAMOUNT)
 		return 0;
 
-	// Matching the requested produce list
-	if (trigger >= 0) {
-		if (trigger > 20) { // Non-weapon, non-food item (itemlv must match)
-			if (skill_produce_db[i].itemlv != trigger)
-				return 0;
-		} else if (trigger > 10) { // Food (any item level between 10 and 20 will do)
-			if (skill_produce_db[i].itemlv <= 10 || skill_produce_db[i].itemlv > 20)
-				return 0;
-		} else { // Weapon (itemlv must be higher or equal)
-			if (skill_produce_db[i].itemlv > trigger)
-				return 0;
-		}
-	}
+	// DimensionsRO: iterate ALL recipes matching this nameid (vanilla stopped
+	// at the first match). For each candidate that passes skill/itemlv/menu
+	// gates we evaluate the material check; the first recipe whose materials
+	// the player can satisfy wins. Enables multiple recipes per produced item
+	// (e.g., Lux Anima original 3 Gold vs Lite 1 Gold + 3 Catalisadora).
+	int16 i, j;
 
-	// Check on player's inventory
-	for (j = 0; j < MAX_PRODUCE_RESOURCE; j++) {
-		t_itemid nameid_produce;
-
-		if (!(nameid_produce = skill_produce_db[i].mat_id[j]))
+	for (i = 0; i < MAX_SKILL_PRODUCE_DB; i++) {
+		if (skill_produce_db[i].nameid != nameid)
 			continue;
-		if (skill_produce_db[i].mat_amount[j] == 0) {
-			if (pc_search_inventory(sd,nameid_produce) < 0)
-				return 0;
-		} else {
-			uint16 idx, amt;
+		if ((j = skill_produce_db[i].req_skill) > 0 &&
+			pc_checkskill(sd, j) < skill_produce_db[i].req_skill_lv)
+			continue;
+		if (j > 0 && sd->menuskill_id > 0 && sd->menuskill_id != j)
+			continue;
 
-			for (idx = 0, amt = 0; idx < MAX_INVENTORY; idx++)
-				if (sd->inventory.u.items_inventory[idx].nameid == nameid_produce)
-					amt += sd->inventory.u.items_inventory[idx].amount;
-			if (amt < qty * skill_produce_db[i].mat_amount[j])
-				return 0;
+		// Matching the requested produce list
+		if (trigger >= 0) {
+			if (trigger > 20) { // Non-weapon, non-food item (itemlv must match)
+				if (skill_produce_db[i].itemlv != trigger)
+					continue;
+			} else if (trigger > 10) { // Food (any item level between 10 and 20 will do)
+				if (skill_produce_db[i].itemlv <= 10 || skill_produce_db[i].itemlv > 20)
+					continue;
+			} else { // Weapon (itemlv must be higher or equal)
+				if (skill_produce_db[i].itemlv > trigger)
+					continue;
+			}
 		}
+
+		// Check on player's inventory
+		bool has_materials = true;
+		for (j = 0; j < MAX_PRODUCE_RESOURCE; j++) {
+			t_itemid nameid_produce;
+
+			if (!(nameid_produce = skill_produce_db[i].mat_id[j]))
+				continue;
+			if (skill_produce_db[i].mat_amount[j] == 0) {
+				if (pc_search_inventory(sd, nameid_produce) < 0) {
+					has_materials = false;
+					break;
+				}
+			} else {
+				uint16 idx, amt;
+
+				for (idx = 0, amt = 0; idx < MAX_INVENTORY; idx++)
+					if (sd->inventory.u.items_inventory[idx].nameid == nameid_produce)
+						amt += sd->inventory.u.items_inventory[idx].amount;
+				if (amt < qty * skill_produce_db[i].mat_amount[j]) {
+					has_materials = false;
+					break;
+				}
+			}
+		}
+
+		if (has_materials)
+			return i + 1;
 	}
-	return i + 1;
+
+	return 0;
 }
 
 /**
