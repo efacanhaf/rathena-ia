@@ -484,7 +484,6 @@ OnMobSpawn:
 		else
 			getitem 6499,5; //Ancient_Grudge
 		getexp 0,100000;
-		callfunc "F_GrantBoosterCoin", 1;
 		next;
 	}
 	mes "[Taho]";

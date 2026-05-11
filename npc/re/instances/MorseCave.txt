@@ -193,7 +193,6 @@ moro_cav,61,69,3	script	Senior Tracker#a1	4_M_JOB_ASSASSIN,{
 			getitem 6684,1;	// TokenOfHero
 		erasequest 9318;// Pursuing Hiding Morocc
 		setquest 9319;// Pursuing Hiding Morocc Continues
-		callfunc "F_GrantBoosterCoin", 2;
 		ep14_3_mors01 = 1;
 		close;
 	}

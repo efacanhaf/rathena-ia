@@ -1263,7 +1263,6 @@ OnTouch:
 			setquest 12497;
 			completequest 12497;
 			getitem 1000103,20;
-			callfunc "F_GrantBoosterCoin", 2;
 			specialeffect EF_MARKING_USE_CHANGEMONSTER;
 			end;
 		}

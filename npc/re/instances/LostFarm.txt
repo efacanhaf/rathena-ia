@@ -202,7 +202,6 @@ ba_maison,311,206,3	script	Luina#greeen	4_EP17_BASIC_B,{
 		completequest 8589;
 		getitem 1000103,20;
 		getexp 3094009,0;
-		callfunc "F_GrantBoosterCoin", 2;
 		next;
 		mes "[Luina]";
 		mes "Probably.";
@@ -1359,7 +1358,6 @@ OnMobDead:
 		mes "Thank you for your hard work!";
 		erasequest 8588;
 		getitem 1000103, .@reward;
-		callfunc "F_GrantBoosterCoin", 2;
 		next;
 	}
 	mes "[Silk]";

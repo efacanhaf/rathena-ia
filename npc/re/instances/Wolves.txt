@@ -153,7 +153,6 @@ rachel,167,244,5	script(CLOAKED)	Priest#sms01	4_F_TRAINEE,{
 			.@count += 2;
 		}
 		getitem 1000405,.@count;	// Ep18_Amethyst_Fragment
-		callfunc "F_GrantBoosterCoin", 3;
 		next;
 		mes "[Priest]";
 		mes "Please take a rest from your journey now! See you again!";

@@ -26,6 +26,7 @@
 #include <common/utils.hpp>
 
 #include "achievement.hpp"
+#include "aichrif.hpp"
 #include "battle.hpp"
 #include "clif.hpp"
 #include "elemental.hpp"
@@ -3563,6 +3564,17 @@ int32 mob_dead(mob_data *md, block_list *src, int32 type)
 			}
 		}
 
+		// AI shells (DimensionsRO Adventurer mercs) are BL_PC for sprite +
+		// targeting reasons but have no party / quest log / achievement
+		// state. When a shell lands the killing blow, credit the human
+		// owner so quest objectives, mission counters, and achievement
+		// progress fire on the player who hired the merc.
+		if (sd && aishell_is_shell((uint32)sd->status.account_id)) {
+			map_session_data* osd = aishell_get_owner((uint32)sd->status.account_id);
+			if (osd != nullptr)
+				sd = osd;
+		}
+
 		if (sd) {
 			std::shared_ptr<s_mob_db> mission_mdb = mob_db.find(sd->mission_mobid), mob = mob_db.find(md->mob_id);
 
@@ -3607,18 +3619,146 @@ int32 mob_dead(mob_data *md, block_list *src, int32 type)
 		// player kills a monster *without label*". Hooka aqui antes do
 		// dispatch pra capturar 100% dos MVPs independente de label.
 		// Account reg #DRO_MVP_KILLS mantido pra historico/leaderboard.
+		// Instance MVPs (OGH Amdarais, Sarah Irene, Demi Freyja, etc) sao
+		// farmaveis e ja pagam Booster Coin via instance_boss_tier abaixo.
+		// Excluir do drop de Nyangvine pra Nyan continuar gated em world MVPs.
+		struct map_data* mob_mapdata = map_getmapdata(md->m);
+		bool mob_in_instance = (mob_mapdata != nullptr && mob_mapdata->instance_id > 0);
 		if (first_sd != nullptr && !md->state.npc_killmonster &&
-				md->get_bosstype() == BOSSTYPE_MVP) {
+				md->get_bosstype() == BOSSTYPE_MVP && !mob_in_instance) {
 			int32 dro_mvp_key = add_str("#DRO_MVP_KILLS");
 			int64 dro_mvp_count = pc_readaccountreg(first_sd, dro_mvp_key) + 1;
 			pc_setaccountreg(first_sd, dro_mvp_key, dro_mvp_count);
-			struct item it{};
-			it.nameid = 6909;	// Nyangvine
-			it.amount = 1;
-			it.identify = 1;
-			pc_additem(first_sd, &it, 1, LOG_TYPE_SCRIPT);
-			clif_messagecolor(first_sd, color_table[COLOR_LIGHT_GREEN],
-				"[DimensionsRO] +1 Nyangvine pelo MVP.", false, SELF);
+
+			// 10% chance + pity em 10 kills sem drop. drystreak conta MVPs
+			// sem Nyan desde a ultima vez que ganhou. Quando chega a 9
+			// (i.e., 9 misses encadeados), o proximo kill (o 10o) e
+			// forcado. Reseta no grant. Garante drop em <= 10 kills.
+			int32 drystreak_key = add_str("#DRO_MVP_NYAN_DRY");
+			int32 drystreak = (int32)pc_readaccountreg(first_sd, drystreak_key);
+			bool forced = (drystreak >= 9);
+			bool lucky = (rnd() % 100 < 10);
+			if (forced || lucky) {
+				pc_setaccountreg(first_sd, drystreak_key, 0);
+				struct item it{};
+				it.nameid = 6909;	// Nyangvine
+				it.amount = 1;
+				it.identify = 1;
+				pc_additem(first_sd, &it, 1, LOG_TYPE_SCRIPT);
+				const char* msg = forced
+					? "[DimensionsRO] +1 Nyangvine pelo MVP (pity 10/10)."
+					: "[DimensionsRO] +1 Nyangvine pelo MVP (sorte!).";
+				clif_messagecolor(first_sd, color_table[COLOR_LIGHT_GREEN],
+					msg, false, SELF);
+			} else {
+				pc_setaccountreg(first_sd, drystreak_key, drystreak + 1);
+				char dryMsg[128];
+				snprintf(dryMsg, sizeof(dryMsg),
+					"[DimensionsRO] MVP! Sem Nyan dessa vez (%d/10).",
+					drystreak + 1);
+				clif_messagecolor(first_sd, color_table[COLOR_WHITE],
+					dryMsg, false, SELF);
+			}
+		}
+
+		// DimensionsRO — Booster Coin por kill de boss-final de instance.
+		// Tabela mob_id -> tier (2/5/10/20 BC). Estrategia C++ porque
+		// callfunc por-NPC no script falha se o player skipa o reward NPC
+		// (OGH: precisa talkar com Varmundt na 1F antes do Hugin na 2F).
+		// Hookar no mob_dead = imune a skip de dialog. Aishell remap acima
+		// ja redireciona o killer pro owner humano. Cap 30 BC/dia por
+		// conta via #DRO_BC_DAILY_DAY + #DRO_BC_DAILY_AMOUNT.
+		//
+		// Distribuicao: TODOS os membros humanos da party no mapa recebem
+		// (aishells filtrados). Cap diario e per-conta, entao cada player
+		// tem o proprio limite. Solo (sem party): so o killer.
+		if (sd != nullptr && !md->state.npc_killmonster) {
+			static const std::unordered_map<int32, int32> instance_boss_tier = {
+				// Tier 1 (2 BC) — Easy
+				{2322, 1}, {2318, 1}, {2319, 1}, {2375, 1}, {2138, 1},
+				{3029, 1}, {2189, 1}, {2190, 1}, {2194, 1}, {1929, 1},
+				{1087, 1},
+				// Tier 2 (5 BC) — Medium
+				{3181, 2}, {3124, 2}, {2942, 2}, {3526, 2}, {2529, 2},
+				{2961, 2}, {3628, 2}, {20620, 2}, {20621, 2}, {2996, 2},
+				{3426, 2}, {3427, 2}, {3428, 2}, {3429, 2}, {3430, 2},
+				{3254, 2}, {20659, 2}, {3073, 2}, {3002, 2}, {3109, 2},
+				{20346, 2}, {3450, 2}, {20353, 2}, {2542, 2}, {20361, 2},
+				{20365, 2}, {3473, 2}, {20642, 2}, {21317, 2}, {21315, 2},
+				{20667, 2}, {20668, 2}, {20669, 2}, {20670, 2}, {2022, 2},
+				{1956, 2},
+				// Tier 3 (10 BC) — Hard
+				{20340, 3}, {3454, 3}, {3190, 3}, {3097, 3}, {3621, 3},
+				{1302, 3}, {2476, 3}, {3150, 3},
+				// Tier 4 (20 BC) — Mega
+				{21361, 4},
+			};
+			auto bit = instance_boss_tier.find(md->mob_id);
+			if (bit != instance_boss_tier.end()) {
+				static constexpr int32 BC_AMOUNTS[] = { 0, 2, 5, 10, 20 };
+				int32 tier = bit->second;
+				if (tier >= 1 && tier <= 4) {
+					int32 reward = BC_AMOUNTS[tier];
+					constexpr int32 cap = 30;
+					time_t now_ts = time(nullptr);
+					struct tm* tm_local = localtime(&now_ts);
+					int32 today = tm_local ? (tm_local->tm_year * 1000 + tm_local->tm_yday) : 0;
+					int32 day_key = add_str("#DRO_BC_DAILY_DAY");
+					int32 amt_key = add_str("#DRO_BC_DAILY_AMOUNT");
+
+					auto grant_to = [&](map_session_data* target) {
+						if (target == nullptr) return;
+						// Aishells nao recebem BC (sao mercs, nao players).
+						if (aishell_is_shell((uint32)target->status.account_id)) return;
+						int32 saved_day = (int32)pc_readaccountreg(target, day_key);
+						int32 saved_amt = (int32)pc_readaccountreg(target, amt_key);
+						if (saved_day != today) {
+							pc_setaccountreg(target, day_key, today);
+							saved_amt = 0;
+							pc_setaccountreg(target, amt_key, 0);
+						}
+						int32 available = cap - saved_amt;
+						if (available <= 0) {
+							clif_messagecolor(target, color_table[COLOR_RED],
+								"[Booster] Cap diario atingido (30/dia). Volte amanha.",
+								false, SELF);
+							return;
+						}
+						int32 grant = std::min(reward, available);
+						struct item bc{};
+						bc.nameid = 1000254;	// Booster_Coin
+						bc.amount = grant;
+						bc.identify = 1;
+						pc_additem(target, &bc, grant, LOG_TYPE_SCRIPT);
+						pc_setaccountreg(target, amt_key, saved_amt + grant);
+						char msg[128];
+						snprintf(msg, sizeof(msg),
+							"[Booster] +%d Booster Coin (%d/%d hoje).",
+							grant, saved_amt + grant, cap);
+						clif_messagecolor(target, color_table[COLOR_LIGHT_GREEN],
+							msg, false, SELF);
+					};
+
+					if (sd->status.party_id != 0) {
+						// Distribui pra TODOS os membros humanos da party que
+						// estao no mesmo mapa (instance map). Cap diario e
+						// per-conta — cada player tem o proprio.
+						struct party_data* pd = party_search(sd->status.party_id);
+						if (pd != nullptr) {
+							for (int32 i = 0; i < MAX_PARTY; i++) {
+								map_session_data* msd = pd->data[i].sd;
+								if (msd == nullptr) continue;
+								if (msd->m != md->m) continue;	// same map only
+								grant_to(msd);
+							}
+						} else {
+							grant_to(sd);
+						}
+					} else {
+						grant_to(sd);
+					}
+				}
+			}
 		}
 
 		if( md->npc_event[0] && !md->state.npc_killmonster ) {

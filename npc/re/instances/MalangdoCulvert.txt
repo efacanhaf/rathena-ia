@@ -260,10 +260,6 @@ L_CheckQuest:
 		erasequest getarg(0);
 		specialeffect2 EF_STEAL;
 		getitem getarg(2),getarg(3);
-		if ('mc_coin_granted == 0) {
-			'mc_coin_granted = 1;
-			callfunc "F_GrantBoosterCoin", 1;
-		}
 		close;
 	}
 	return;

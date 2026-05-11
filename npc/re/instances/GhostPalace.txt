@@ -983,7 +983,6 @@ OnTouch_:
 		getexp 900000,500000;
 		getitem 6672,2;// Gray Shard
 	}
-	callfunc "F_GrantBoosterCoin", 2;
 	warp "dali02",46,129;
 	end;
 }

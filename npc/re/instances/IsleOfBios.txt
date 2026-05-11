@@ -357,7 +357,6 @@ OnMyMobDead:
 		mes "Let's get out of this creepy place!";
 		close2;
 		getitem 6684,1;// Token Of Hero
-		callfunc "F_GrantBoosterCoin", 1;
 		if (ep14_3_isle == 0)
 			ep14_3_isle = 1;
 		if (checkquest(15007,PLAYTIME) == 0 || checkquest(15007,PLAYTIME) == 1)

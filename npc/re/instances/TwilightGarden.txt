@@ -873,7 +873,6 @@ OnMobDead:
 	mes "[Almond]";
 	mes "Then, shall we?";
 	close2;
-	callfunc "F_GrantBoosterCoin", 4;
 	warp "ba_in01",18,255;
 	end;
 }

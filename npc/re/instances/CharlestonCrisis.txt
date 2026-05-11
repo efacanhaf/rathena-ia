@@ -1749,7 +1749,6 @@ OnTimer300:
 		setquest 13188;
 		getexp 1000000,300000;
 		getitem 6752,1;	// Charleston_Parts
-		callfunc "F_GrantBoosterCoin", 2;
 		close;
 	}
 	end;

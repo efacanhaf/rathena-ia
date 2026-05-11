@@ -59,7 +59,6 @@ dali02,134,119,5	script	Historian Shep#tnm01	4_F_NOVICE,{
 		erasequest 7574;// Thanatos Tower
 		erasequest 7576;// Morocc castle seal
 		getexp 450000,450000;
-		callfunc "F_GrantBoosterCoin", 2;
 		devil_tower_can_reenter = 0;
 		devil_tower_enter = 0;
 		mes "Please come back tomorrow!";

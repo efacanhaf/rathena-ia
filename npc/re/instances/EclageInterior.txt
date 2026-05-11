@@ -464,7 +464,6 @@ OnMyMobDead:
 	mes "We will take off now.";
 	mes "Let's go." + strcharinfo(0) + ".";
 	ep14_2_mylord = 30;
-	callfunc "F_GrantBoosterCoin", 1;
 	changequest 7450,7451;
 	close2;
 	cutin "",255;

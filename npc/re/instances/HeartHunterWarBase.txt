@@ -1179,7 +1179,6 @@ OnTimer40000:
 		getitem 25155,10;// Swz_Honor_Token
 		completequest 12374;// Heart Hunter Base occupation
 		terra_gloria_main = 20;
-		callfunc "F_GrantBoosterCoin", 2;
 	}
 	close2;
 	warp "ein_fild04",279,339;

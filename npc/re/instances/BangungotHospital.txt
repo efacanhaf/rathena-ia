@@ -168,7 +168,6 @@ ma_dun01,147,10,5	script	Nurse#ma_dun01	4_F_NURSE,{
 				getitem 6499,7;// Ancient_Grudge
 			else
 				getitem 6499,5;
-			callfunc "F_GrantBoosterCoin", 1;
 			close2;
 			cutin "",255;
 			end;

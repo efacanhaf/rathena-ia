@@ -861,7 +861,6 @@ OnEnable:
 	end;
 
 OnTouch_:
-	callfunc "F_GrantBoosterCoin", 1;
 	warp "gef_fild10",240,197;
 	end;
 }

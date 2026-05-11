@@ -886,7 +886,6 @@ OnStop:
 		erasequest 7700;// Once More!
 		setquest 7701;// Lost Imir Heart
 		ep16_royal = 20;
-		callfunc "F_GrantBoosterCoin", 2;
 	}
 	warp "prt_lib_q",88,83;
 	end;

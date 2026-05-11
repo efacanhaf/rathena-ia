@@ -1020,7 +1020,6 @@ OnTouchNPC:
 		mes "[Velkina]";
 		mes "Then, I'll show you the way outside again!";
 		close2;
-		callfunc "F_GrantBoosterCoin", 2;
 		warp "ba_maison",233,46;
 		end;
 	}

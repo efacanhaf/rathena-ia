@@ -1132,7 +1132,6 @@ OnMobDead2:
 		ep18_main = 55;
 		erasequest 18083;
 		setquest 18084;
-		callfunc "F_GrantBoosterCoin", 2;
 		if (is_party_leader() == true)
 			enablenpc instance_npcname("#boss_out");
 		close3;

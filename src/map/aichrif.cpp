@@ -26,11 +26,14 @@
 #include "mapreg.hpp"
 #include "script.hpp"
 #include <common/mapindex.hpp>
+#include <common/utilities.hpp>
 
 #include "map.hpp"
 #include "mob.hpp"
 #include "itemdb.hpp"
 #include "pc.hpp"
+#include "pc_groups.hpp"
+#include "instance.hpp"
 #include "skill.hpp"
 #include "status.hpp"
 #include "unit.hpp"
@@ -82,6 +85,24 @@ constexpr t_tick AI_OWNER_DAMAGE_TTL_MS = 4000;
 
 bool aishell_is_shell(uint32 account_id){
 	return account_id >= 95'000'000 && account_id < 100'000'000;
+}
+
+/// Return the human owner sd for a hired shell, or nullptr if the shell
+/// is autonomous (no owner) / owner offline / shell unknown. Used by
+/// mob_dead etc. to re-credit kills back to the player whose tank merc
+/// landed the killing blow.
+map_session_data* aishell_get_owner(uint32 shell_account_id){
+	if (!aishell_is_shell(shell_account_id)) return nullptr;
+	auto it = g_owner_aid.find(shell_account_id);
+	if (it == g_owner_aid.end() || it->second == 0) return nullptr;
+	map_session_data* osd = map_id2sd((int32)it->second);
+	if (osd == nullptr) return nullptr;
+	// Verify the bound character is the one currently online on this AID.
+	auto cit = g_owner_cid.find(shell_account_id);
+	if (cit != g_owner_cid.end() && cit->second != 0
+	    && (uint32)osd->status.char_id != cit->second)
+		return nullptr;
+	return osd;
 }
 
 void aichrif_owner_dealt_damage(map_session_data* sd, block_list* target){
@@ -205,6 +226,11 @@ static int32 aichrif_restore_callback(map_session_data* sd, va_list ap){
 			remaining_min = (remaining_sec + 59) / 60;
 			dur_ms = (uint32)remaining_min * 60u * 1000u;
 		}
+		// Defensive: ai-server may still hold a stale merc binding from a
+		// previous map-server process (the ghost-shell scenario where
+		// SHELL_CMD spams "unknown shell"). Dismiss first so the dedupe
+		// check inside aichrif_hire (ai-server) passes. No-op if no ghost.
+		aichrif_send_dismiss(cid, r.role);
 		if (aichrif_send_hire(
 				(uint32)sd->status.account_id, cid, r.job, r.tier,
 				mname, (uint16)sd->x, (uint16)sd->y,
@@ -240,17 +266,23 @@ static void aichrif_restore_online_mercs(void){
 
 /// Handle PACKET_AI_PING { len:W=8, token:L }. Phase 1.1 smoke test only.
 static int32 aichrif_handle_ping(int32 fd){
+	// Fire restore on:
+	//   (a) token == 1: ai-server just booted (or auto-detected map-dead
+	//       and reset its counter). Definitive signal.
+	//   (b) FIRST ping this map process has seen, regardless of token.
+	//       Covers the case where ai-server was already up when map booted
+	//       (or map booted between ai-server's reset ping=1 attempt being
+	//       dropped and the next one going through with token>1).
+	// The script-side orphan check ($dro_ai_boot_ts > hired_at) still works
+	// because restore_callback updates hired_at = now on every fire.
+	static bool restored_this_boot = false;
 	uint32 token = RFIFOL(fd, 4);
 	ShowInfo("ai-server: ping received (token=%u). Sending pong.\n", token);
 	aichrif_send_pong(fd, token);
-	// Phase 6.2 — record ai-server boot moment in mapreg $dro_ai_boot_ts.
-	// token=1 is the first ping after startup; OnPCLoginEvent and the
-	// Treinador NPC use this to detect orphan contracts on subsequent
-	// logins / NPC visits. We also kick off a restore pass for chars
-	// already online RIGHT NOW so they don't have to relog.
-	if (token == 1) {
+	if (token == 1 || !restored_this_boot) {
 		mapreg_setreg(reference_uid(add_str("$dro_ai_boot_ts"), 0), (int)time(nullptr));
 		aichrif_restore_online_mercs();
+		restored_this_boot = true;
 	}
 	return 1;
 }
@@ -293,6 +325,18 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 	// hits session[0] (console listener) and crashes WFIFOHEAD.
 	pc_setnewpc(sd, p->shell_id, p->shell_id, 0, gettick(), p->sex, -1);
 
+	// Bind to default player group (id 0) so any GM atcommand that walks
+	// sd->group->{level,permissions,...} on a shell doesn't null-deref.
+	// Crashes seen so far: @kick (270e39719), @recallall. Initializing here
+	// covers the entire class instead of whack-a-mole guards per command.
+	// Silent fallback to nullptr is safe: pc_get_group_level is null-safe
+	// (270e39719) and other call sites still need it eventually, but this
+	// is the canonical place to fix once.
+	sd->group_id = 0;
+	sd->group = player_group_db.find(0);
+	if (sd->group != nullptr)
+		sd->permissions = sd->group->permissions;
+
 	// Identity
 	safestrncpy(sd->status.name, p->name, NAME_LENGTH);
 	sd->status.class_ = p->class_;
@@ -322,7 +366,7 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 		// for unknown roles so a stale client still gets *some* uniform.
 		static constexpr uint8 ROLE_PALETTE[] = {
 			5,	// AI_HIRE_ROLE_SUPPORT
-			3,	// AI_HIRE_ROLE_TANK
+			4,	// AI_HIRE_ROLE_TANK (era 3, mas cliente renderiza N-1 visualmente)
 		};
 		uint8 pal = (p->role < std::size(ROLE_PALETTE)) ? ROLE_PALETTE[p->role] : 5;
 		sd->status.clothes_color = pal;
@@ -330,8 +374,11 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 		sd->status.head_mid    = 1756;	// 31514  C_American_S_hair
 		sd->status.head_bottom = 0;
 		sd->status.robe        = 107;	// 480110 C_Adventure_Cat_Bag
+		ShowStatus("aishell uniform: shell=%u role=%u class=%u -> clothes_color=%u\n",
+			p->shell_id, p->role, p->class_, pal);
 	}
 	sd->status.body = p->class_; // pc_jobchange sets body = class_; mirror that
+	                              // (necessario pro cliente nao renderizar Novice)
 	sd->status.base_level = 1;
 	sd->status.job_level = 1;
 	sd->status.zeny = 0;
@@ -543,8 +590,9 @@ static map_session_data* aishell_create(const PACKET_AI_SHELL_SPAWN_S* p){
 		aFree(sd);
 		return nullptr;
 	}
-	ShowInfo("aishell pre-clif_spawn: status.class_=%u vd.look[BASE]=%d vd.dead_sit=%u sex=%d\n",
-		sd->status.class_, sd->vd.look[LOOK_BASE], (uint32)sd->vd.dead_sit, (int)sd->vd.sex);
+	ShowInfo("aishell pre-clif_spawn: shell=%u status.class_=%u vd.look[BASE]=%d vd.dead_sit=%u sex=%d status.clothes_color=%u vd.look[CLOTHES_COLOR]=%d status.body=%u vd.look[BODY2]=%d\n",
+		p->shell_id, sd->status.class_, sd->vd.look[LOOK_BASE], (uint32)sd->vd.dead_sit, (int)sd->vd.sex,
+		sd->status.clothes_color, sd->vd.look[LOOK_CLOTHES_COLOR], sd->status.body, sd->vd.look[LOOK_BODY2]);
 	clif_spawn(sd);
 	// Broadcast the full changelook chain AFTER spawn — mirrors what
 	// pc_jobchange runs at the very end. Without this the client keeps the
@@ -795,7 +843,27 @@ static void aichrif_send_report(uint32 shell_id, const map_session_data* sd){
 		}
 		if (osd != nullptr) {
 			p.owner_present = 1;
-			p.owner_mapindex = (uint16)osd->mapindex;
+			// Owner inside an instance: the dynamically-generated instance
+			// mapindex isn't known to ai-server (its mapindex db only has
+			// the base maps). Send the BASE mapindex so ai-server's
+			// mapindex_id2name resolves; the warp handler then promotes
+			// it back to the owner's specific instance via instance_mapid.
+			uint16 owner_idx = (uint16)osd->mapindex;
+			// sd->instance_id is only set on the leader (IM_CHAR creators).
+			// For IM_PARTY/GUILD members, check the MAP's instance_id instead.
+			struct map_data* omd = map_getmapdata(osd->m);
+			if (omd && omd->instance_id > 0) {
+				auto idata = rathena::util::umap_find(instances, omd->instance_id);
+				if (idata) {
+					for (const auto& im : idata->map) {
+						if (im.m == osd->m && im.src_m >= 0) {
+							owner_idx = map_getmapdata(im.src_m)->index;
+							break;
+						}
+					}
+				}
+			}
+			p.owner_mapindex = owner_idx;
 			p.owner_x = (uint16)osd->x;
 			p.owner_y = (uint16)osd->y;
 			uint32 ohp_max = osd->battle_status.max_hp ? osd->battle_status.max_hp : 1;
@@ -1043,14 +1111,45 @@ static int32 aichrif_handle_cmd(int32 fd){
 			char nm[sizeof(w->map_name) + 1] = {0};
 			memcpy(nm, w->map_name, sizeof(w->map_name));
 			int16 m = map_mapname2mapid(nm);
+			// Instance follow: ai-server only knows the base map name
+			// (mapindex_id2name returns the base). If owner is inside an
+			// instance, redirect the shell to the owner's instanced map id
+			// and bind the shell to the same instance so OnMyMobDead labels,
+			// damage attribution, and map-leave hooks all work for it.
+			if (m >= 0) {
+				auto oit2 = g_owner_aid.find(hdr->shell_id);
+				if (oit2 != g_owner_aid.end()) {
+					map_session_data* osd2 = map_id2sd((int32)oit2->second);
+					// Use the MAP's instance_id (not sd->instance_id) so it
+					// works for party/guild members, not just leaders.
+					struct map_data* omd2 = osd2 ? map_getmapdata(osd2->m) : nullptr;
+					int32 owner_inst = (omd2 && omd2->instance_id > 0) ? omd2->instance_id : 0;
+					if (osd2 != nullptr && owner_inst > 0) {
+						int16 im = instance_mapid(m, owner_inst);
+						if (im >= 0) {
+							m = im;
+							sd->instance_id = owner_inst;
+							sd->instance_mode = osd2->instance_mode;
+							const char* alt = map_mapid2mapname(m);
+							if (alt && alt[0]) {
+								safestrncpy(nm, alt, sizeof(nm));
+							}
+						}
+					} else if (osd2 != nullptr && owner_inst == 0 && sd->instance_id != 0) {
+						// Owner left the instance — clear shell's binding.
+						sd->instance_id = 0;
+					}
+				}
+			}
 			ShowStatus("aichrif: WARP shell %u to '%s' (m=%d) %u,%u\n",
 				hdr->shell_id, nm, (int32)m, w->x, w->y);
 			if (m < 0) break;
 			int16 dx = (int16)w->x, dy = (int16)w->y;
-			// Tight radius — the warp packet already targets a cell next
-			// to the owner. A wide search nudges the merc 30+ cells away,
-			// out of viewport. 4 cells is enough to avoid walls/portals.
-			if (!map_search_freecell(nullptr, m, &dx, &dy, 4, 4, 1)) {
+			// 3x3 box around the owner's reported cell (range=1 in each
+			// axis = 9 cells total). Player feedback: a 4-cell radius
+			// dropped the merc up to 8 cells away from the player —
+			// looked teleport-y instead of "right next to me".
+			if (!map_search_freecell(nullptr, m, &dx, &dy, 1, 1, 1)) {
 				dx = (int16)w->x; dy = (int16)w->y;
 			}
 			// pc_setpos triggers char-server save which crashes for shells

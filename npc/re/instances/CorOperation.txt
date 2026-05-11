@@ -757,7 +757,6 @@ OnTimer10000:
 		erasequest 16376;
 		setquest 16357;
 		setquest 16377;
-		callfunc "F_GrantBoosterCoin", 3;
 		close2;
 		warp "sp_cor",176,169;
 	}

@@ -1992,7 +1992,6 @@ OnTimer2000:
 	}
 	mes "- You start to transport. -";
 	close2;
-	callfunc "F_GrantBoosterCoin", 2;
 	if (fortress_entrance_loc == 0)
 		warp "prt_q",244,81;
 	else {

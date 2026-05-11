@@ -2119,7 +2119,6 @@ OnMyMobDead:
 		mes "You're carrying too much stuff. Why don't you put some of it away, and then come back?";
 		close;
 	}
-	callfunc "F_GrantBoosterCoin", 2;
 	mes "[Lost Souls]";
 	mes "It's you that have liberated us from the evil Naght Sieger.";
 	next;

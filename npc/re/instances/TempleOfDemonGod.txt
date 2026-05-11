@@ -2234,7 +2234,6 @@ OnTimer8000:
 		if (isbegin_quest(7593) == 1) {
 			erasequest 7593;// Demon God Subjugation
 			setquest 7597;// Fall of the False God
-			callfunc "F_GrantBoosterCoin", 3;
 		}
 		if (checkquest(7601,HUNTING) == 1)
 			erasequest 7601;

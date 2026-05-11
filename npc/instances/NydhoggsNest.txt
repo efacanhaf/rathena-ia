@@ -1040,7 +1040,6 @@ spl_in01,104,56,3	script	Aide Arioss#edq	437,3,3,{
 				getexp 150000,35000;
 			getitem 6081,10; //Splendide_Coin
 			set ins_nyd,131;
-			callfunc "F_GrantBoosterCoin", 2;
 			mes "[Aide Arioss]";
 			mes "If we can help you with anything in the future, we will do all we can to assist you. Once again, thank you.";
 			close;
@@ -1280,7 +1279,6 @@ man_in01,311,57,3	script	Neat Etorr#edq	453,3,3,{
 				getexp 150000,35000;
 			getitem 6080,10; //Manuk_Coin
 			set ins_nyd,132;
-			callfunc "F_GrantBoosterCoin", 2;
 			close;
 		} else if (ins_nyd == 132) {
 			mes "Strange one, thank you for helping us in the time of need. I will never forget your kindness.";

@@ -947,7 +947,6 @@ OnTouch:	// effect ?
 			erasequest 12520;
 		if (rand(100) < 10)
 			getitem 1000471,1;
-		callfunc "F_GrantBoosterCoin", 2;
 		close;
 	}
 	mes "^0000ffI think you can get out now.^000000";

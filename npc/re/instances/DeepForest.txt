@@ -529,7 +529,6 @@ OnMobDead:
 	if (isbegin_quest(11782) == 1) {
 		erasequest 11782;
 		setquest 11769;
-		callfunc "F_GrantBoosterCoin", 2;
 	}
 	if ('step == 8)
 		'step = 9;

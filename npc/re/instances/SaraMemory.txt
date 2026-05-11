@@ -38,7 +38,6 @@ dali,130,107,6	script	Adventurer Leon	945,{
 		set saramemory,3;
 		erasequest 15003;
 		getexp 770000,1000000;
-		callfunc "F_GrantBoosterCoin", 2;
 		mes "[Adventurer Leon]";
 		mes "I think in about 20 hours after you last entered the rift, it will be stable enough for you to transverse it again.";
 		close;
@@ -119,7 +118,6 @@ dali,130,107,6	script	Adventurer Leon	945,{
 		set saramemory,3;
 		erasequest 15003;
 		getexp 550000,550000;
-		callfunc "F_GrantBoosterCoin", 2;
 		mes "[Adventurer Leon]";
 		mes "I think in about 20 hours after you last entered the rift, it will be stable enough for you to transverse it again.";
 		close;

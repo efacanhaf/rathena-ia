@@ -451,7 +451,6 @@ OnMyMobDead2:
 	mes "Who am I...";
 	cutin "EP15_2_brt_6.bmp",2;
 	close2;
-	callfunc "F_GrantBoosterCoin", 2;
 	warp "un_bunker",299,162;
 	end;
 

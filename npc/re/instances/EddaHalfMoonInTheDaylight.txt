@@ -3258,7 +3258,6 @@ OnTouch:
 		delitem 25087,1; //Old_Doll
 		getexp 350000,350000;
 		getitem 25088,2; //Dream_Piece
-		callfunc "F_GrantBoosterCoin", 2;
 	}
 	if ('progress == 18)
 		'progress = 19;

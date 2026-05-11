@@ -916,7 +916,6 @@ mora,48,152,3	script	Sharp Eyed Man	512,{
 		getitem 2568,1; //Muffler_Of_Roki
 		getitem 2858,1; //Pendant_Of_Guardian
 		getexp 400000,400000;
-		callfunc "F_GrantBoosterCoin", 1;
 		close;
 	} else {
 		mes "[Loki]";

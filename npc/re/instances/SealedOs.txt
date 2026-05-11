@@ -476,7 +476,6 @@ OnTouch:
 		setquest 11601;
 		getitem 25669,25;
 		getexp 600000,600000;
-		callfunc "F_GrantBoosterCoin", 2;
 	}
 	close2;
 	warp "ein_fild03",258,267;

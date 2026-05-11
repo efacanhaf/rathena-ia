@@ -2231,7 +2231,6 @@ OnTimer10000:
 			getitem .@item[0],1;
 			getitem .@item[2],1;
 		}
-		callfunc "F_GrantBoosterCoin", ('OGH_Mode == 2 ? 4 : 3);
 		next;
 		mes "[Hugin]";
 		mes "Varmundt's time is stopped by me.";
